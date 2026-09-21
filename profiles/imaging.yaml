@@ -1,0 +1,12 @@
+name: 影像检查
+prompt: >
+  从影像检查报告中提取明确描述的病灶、部位、大小、数量以及报告结论。每个独立病灶或结论作为 clinical_result。
+  extraction_text必须逐字来自原文，不推断良恶性，不自行分期。
+  attributes 中 category写影像，item写病灶或结论名称，value写原文中的关键结果，unit写尺寸单位（如有），其余没有则空字符串。
+examples:
+  - text: "右肺上叶见一结节，大小约12×8 mm。结论：右肺上叶结节，建议随访。"
+    extractions:
+      - text: "右肺上叶见一结节，大小约12×8 mm"
+        attributes: {category: "影像", item: "右肺上叶结节", value: "12×8", unit: "mm", reference_low: "", reference_high: "", abnormal_flag: ""}
+      - text: "右肺上叶结节，建议随访"
+        attributes: {category: "影像结论", item: "结论", value: "右肺上叶结节，建议随访", unit: "", reference_low: "", reference_high: "", abnormal_flag: ""}

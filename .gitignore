@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+data/uploads/*
+data/exports/*
+data/*.sqlite3
+data/settings.json
+dist/
+build/
+*.spec

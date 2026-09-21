@@ -1,0 +1,16 @@
+name: 病理 / 免疫组化
+prompt: >
+  提取病理或免疫组化报告中明确出现的检查结果，包括但不限于标志物、阳性比例、染色强度、HER2评分、Ki-67指数、病理诊断和分子检测结果。
+  每条使用 clinical_result，extraction_text必须是原文连续片段，不做医学推断。
+  attributes: category、item、value、unit、reference_low、reference_high、abnormal_flag；缺失写空字符串。
+examples:
+  - text: "ER（90%强+），PR（20%中+），HER2（1+），Ki-67约25%。"
+    extractions:
+      - text: "ER（90%强+）"
+        attributes: {category: "免疫组化", item: "ER", value: "90%强+", unit: "", reference_low: "", reference_high: "", abnormal_flag: "阳性"}
+      - text: "PR（20%中+）"
+        attributes: {category: "免疫组化", item: "PR", value: "20%中+", unit: "", reference_low: "", reference_high: "", abnormal_flag: "阳性"}
+      - text: "HER2（1+）"
+        attributes: {category: "免疫组化", item: "HER2", value: "1+", unit: "", reference_low: "", reference_high: "", abnormal_flag: ""}
+      - text: "Ki-67约25%"
+        attributes: {category: "免疫组化", item: "Ki-67", value: "25%", unit: "", reference_low: "", reference_high: "", abnormal_flag: ""}

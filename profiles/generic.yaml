@@ -1,0 +1,18 @@
+name: 通用临床报告
+prompt: >
+  从临床检查、检验、病理、免疫组化或影像报告文字中提取明确出现的结果。
+  只提取原文明确写出的信息，不推断、不补全、不根据医学常识改写。
+  extraction_text 必须逐字来自原文。每条结果均使用 clinical_result 类。
+  attributes 必须包含 category、item、value、unit、reference_low、reference_high、abnormal_flag；
+  原文没有的信息填写空字符串。
+examples:
+  - text: "免疫组化：ER约90%肿瘤细胞强阳性，PR约30%阳性，HER2（2+），Ki-67约40%。"
+    extractions:
+      - text: "ER约90%肿瘤细胞强阳性"
+        attributes: {category: "免疫组化", item: "ER", value: "90%", unit: "", reference_low: "", reference_high: "", abnormal_flag: "阳性"}
+      - text: "PR约30%阳性"
+        attributes: {category: "免疫组化", item: "PR", value: "30%", unit: "", reference_low: "", reference_high: "", abnormal_flag: "阳性"}
+      - text: "HER2（2+）"
+        attributes: {category: "免疫组化", item: "HER2", value: "2+", unit: "", reference_low: "", reference_high: "", abnormal_flag: ""}
+      - text: "Ki-67约40%"
+        attributes: {category: "免疫组化", item: "Ki-67", value: "40%", unit: "", reference_low: "", reference_high: "", abnormal_flag: ""}
