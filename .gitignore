@@ -8,3 +8,7 @@ data/settings.json
 dist/
 build/
 *.spec
+!ClinicalExtractor.spec
+*.egg-info/
+.portable-model-cache/
+build-portable.*.log

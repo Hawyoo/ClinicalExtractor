@@ -17,8 +17,8 @@ PDF / JPG / PNG → **PP-StructureV3** → 区域分流：
 ### 1. 前置条件
 
 - Windows 10/11 x64
-- Python 3.11（推荐）
-- Ollama
+- [uv](https://docs.astral.sh/uv/)（`start-windows.bat` 自动下载项目专属 Python 3.12）
+- Ollama（仅处理长文本报告时需要）
 
 先在 PowerShell 中准备一个本地模型，例如：
 
@@ -26,17 +26,7 @@ PDF / JPG / PNG → **PP-StructureV3** → 区域分流：
 ollama pull qwen3:8b
 ```
 
-### 2. 安装 ClinicalExtractor
-
-右键 PowerShell 运行：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1
-```
-
-安装脚本会创建项目内 `.venv`，安装 PaddlePaddle CPU、PP-StructureV3 所需 `paddleocr[doc-parser]`、LangExtract 和 Web UI 依赖。
-
-### 3. 启动
+### 2. 一键启动
 
 双击：
 
@@ -44,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install-windows.ps1
 start-windows.bat
 ```
 
-浏览器访问：`http://127.0.0.1:8765`
+它会自动创建/检查项目环境、安装依赖，并启动浏览器。浏览器访问：`http://127.0.0.1:8765`
 
 > 首次真正运行 PP-StructureV3 时，PaddleOCR 会下载对应模型权重，因此第一次需要联网。模型缓存完成后可离线使用。Ollama 推理完全在本地完成。
 
@@ -122,13 +112,9 @@ pytest
 
 ## Windows 便携包
 
-在已经安装好的 Windows 环境执行：
+双击根目录的 `build-portable.bat`。它会完成环境检查、安装 PyInstaller、构建 Portable，并在 `dist\ClinicalExtractor` 写入启动页、图标和说明。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build-portable.ps1
-```
-
-输出到 `dist\ClinicalExtractor`。注意 PaddleOCR 模型权重体积很大且由运行时缓存管理，本脚本默认不把模型权重硬塞进 EXE；若需要医院完全离线分发，后续应单独做“预下载模型缓存 + portable bundle”。
+输出到 `dist\ClinicalExtractor`。构建时会预下载 PP-StructureV3 所需模型并复制到便携版；成品约额外包含 1 GB OCR 模型。最终用户直接双击 `ClinicalExtractor.exe`，正常 OCR 不需要联网。Ollama 模型不随包携带，因为单个模型通常数 GB；长文本抽取时在目标电脑安装 Ollama 即可。
 
 ## 当前版本边界
 

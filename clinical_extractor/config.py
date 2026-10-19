@@ -5,8 +5,13 @@ import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("CLINICAL_EXTRACTOR_DATA", ROOT / "data"))
+FROZEN = bool(getattr(sys, "frozen", False))
+# In a PyInstaller package, bundled templates/profiles live in _MEIPASS, while
+# mutable records must live next to the executable instead of its temporary
+# extraction directory.
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) if FROZEN else Path(__file__).resolve().parent.parent
+PORTABLE_ROOT = Path(sys.executable).resolve().parent if FROZEN else ROOT
+DATA_DIR = Path(os.getenv("CLINICAL_EXTRACTOR_DATA", PORTABLE_ROOT / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "clinical_extractor.sqlite3"

@@ -82,7 +82,12 @@ class PPStructureParser:
         raw_parts: list[str] = []
 
         for page_no, res in enumerate(pages):
-            data = getattr(res, "json", {}) or {}
+            # PaddleOCR 3.x exposes a normalized, JSON-safe payload through
+            # `result.str["res"]`. `result.json` wraps data in another `res`
+            # key, so reading it directly silently produced no text/table
+            # blocks with current PaddleOCR releases.
+            rendered = getattr(res, "str", {}) or {}
+            data = rendered.get("res", rendered) if isinstance(rendered, dict) else {}
             if not isinstance(data, dict):
                 try:
                     data = dict(data)

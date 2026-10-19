@@ -1,20 +1,39 @@
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
-Write-Host "=== ClinicalExtractor Windows Installer ===" -ForegroundColor Cyan
-$py = $null
-foreach ($cmd in @("py -3.11", "py -3.10", "python")) {
-  try { Invoke-Expression "$cmd --version" | Out-Host; $py=$cmd; break } catch {}
+function Invoke-Checked {
+    param([scriptblock]$Command, [string]$Description)
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Description failed (exit code $LASTEXITCODE)."
+    }
 }
-if (-not $py) { throw "需要 Python 3.10/3.11。建议安装 Python 3.11 x64 后重试。" }
 
-if (-not (Test-Path ".venv")) { Invoke-Expression "$py -m venv .venv" }
+Write-Host "=== ClinicalExtractor installer ===" -ForegroundColor Cyan
+
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    throw "uv was not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"
+}
+
+# The project owns its interpreter. CPython 3.12 has broad, proven Windows
+# wheel coverage across PaddleOCR and document-parser dependencies.
+Invoke-Checked { uv python install 3.12 } "Python provisioning"
 $python = Join-Path $PWD ".venv\Scripts\python.exe"
-& $python -m pip install -U pip wheel setuptools
+if (Test-Path $python) {
+    # Do not rebuild a healthy environment on every launch. This also avoids
+    # replacing files while the app is open.
+    & $python -c "import pip"
+    if ($LASTEXITCODE -ne 0) {
+        Invoke-Checked { uv venv --clear --seed --python 3.12 .venv } "Virtual-environment repair"
+    }
+} else {
+    Invoke-Checked { uv venv --seed --python 3.12 .venv } "Virtual-environment creation"
+}
 
-# PaddlePaddle CPU inference engine; AMD Windows machines use CPU for PP-StructureV3 by default.
-& $python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-& $python -m pip install -e ".[ocr]"
+Invoke-Checked { uv pip install --python $python -e ".[ocr,dev]" } "Dependency installation"
 
-Write-Host "安装完成。请确保 Ollama 已安装并已拉取模型，然后双击 start-windows.bat。" -ForegroundColor Green
-Write-Host "示例: ollama pull qwen3:8b"
+Invoke-Checked { & $python -c "import paddle; print('PaddlePaddle', paddle.__version__); paddle.utils.run_check()" } "PaddlePaddle verification"
+Invoke-Checked { & $python -c "from paddleocr import PPStructureV3; print('PP-StructureV3 import OK')" } "PP-StructureV3 verification"
+
+Write-Host "Installation complete. Pull an Ollama model, then run start-windows.bat." -ForegroundColor Green
+Write-Host "Example: ollama pull qwen3:8b"
