@@ -49,11 +49,21 @@ CREATE TABLE IF NOT EXISTS transfer_imports (
   imported_at TEXT NOT NULL,
   report_count INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS ocr_text_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  report_id INTEGER NOT NULL,
+  previous_text TEXT NOT NULL,
+  new_text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(report_id) REFERENCES reports(id) ON DELETE CASCADE
+);
 """
 
 @contextmanager
 def connect():
-    con = sqlite3.connect(DB_PATH)
+    # OCR and AI have separate workers; short write transactions can wait for
+    # one another without failing a large batch on a transient database lock.
+    con = sqlite3.connect(DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     try:
@@ -66,7 +76,22 @@ def connect():
 def init_db():
     with connect() as con:
         con.executescript(SCHEMA)
+        # Legacy column stays for compatibility with old databases/packages,
+        # but report dates are no longer retained as structured metadata.
+        con.execute("UPDATE reports SET report_date='' WHERE report_date<>''")
         columns = {row["name"] for row in con.execute("PRAGMA table_info(reports)")}
+        if "template_id" not in columns:
+            con.execute("ALTER TABLE reports ADD COLUMN template_id TEXT NOT NULL DEFAULT ''")
+        for name,definition in [('ocr_text_original',"TEXT NOT NULL DEFAULT ''"),('ocr_text_edited','INTEGER NOT NULL DEFAULT 0')]:
+            if name not in columns:
+                con.execute(f'ALTER TABLE reports ADD COLUMN {name} {definition}')
+        extraction_columns={row['name'] for row in con.execute('PRAGMA table_info(extractions)')}
+        if 'sort_order' not in extraction_columns:
+            con.execute('ALTER TABLE extractions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0')
+            con.execute('UPDATE extractions SET sort_order=id')
+        # Existing table reports join the unified catalog without touching
+        # OCR evidence, numeric results, or review confirmations.
+        con.execute("UPDATE reports SET template_id='all' WHERE profile='表格式报告' AND template_id<>'all'")
         if "transfer_key" not in columns:
             con.execute("ALTER TABLE reports ADD COLUMN transfer_key TEXT NOT NULL DEFAULT ''")
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_transfer_key ON reports(transfer_key) WHERE transfer_key <> ''")

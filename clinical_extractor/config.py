@@ -5,6 +5,12 @@ import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
+# PaddlePaddle 3.3's oneDNN CPU execution path can fail on PP-StructureV3
+# model attributes on some Windows hosts.  The standard CPU kernels remain
+# fully functional and are materially more reliable for a local desktop app.
+# This must be set before PaddlePaddle is imported anywhere in the process.
+os.environ.setdefault("FLAGS_use_mkldnn", "0")
+
 FROZEN = bool(getattr(sys, "frozen", False))
 # In a PyInstaller package, bundled templates/profiles live in _MEIPASS, while
 # mutable records must live next to the executable instead of its temporary
@@ -16,6 +22,12 @@ UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "clinical_extractor.sqlite3"
 SETTINGS_PATH = DATA_DIR / "settings.json"
+AUTO_OCR_THREADS = 6  # 7500F: 6 and 11 threads tied on the local two-report benchmark.
+
+
+def ocr_thread_count(requested: int = 0) -> int:
+    logical = max(1, os.cpu_count() or 1)
+    return max(1,min(logical, int(requested))) if requested else min(AUTO_OCR_THREADS,max(1,logical-1))
 PROFILE_DIR = Path(os.getenv("CLINICAL_EXTRACTOR_PROFILES", ROOT / "profiles"))
 
 for p in (DATA_DIR, UPLOAD_DIR, EXPORT_DIR, PROFILE_DIR):
@@ -26,6 +38,7 @@ class Settings:
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:8b"
     pp_device: str = "cpu"
+    ocr_cpu_threads: int = 0
     use_doc_orientation_classify: bool = True
     use_doc_unwarping: bool = False
     use_textline_orientation: bool = True

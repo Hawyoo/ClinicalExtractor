@@ -41,7 +41,14 @@ if not defined CLINICAL_EXTRACTOR_PORT goto :error
 echo Starting ClinicalExtractor at http://127.0.0.1:%CLINICAL_EXTRACTOR_PORT% ...
 start "" http://127.0.0.1:%CLINICAL_EXTRACTOR_PORT%
 ".venv\Scripts\python.exe" -m clinical_extractor.main
-if errorlevel 1 goto :error
+set "APP_EXIT_CODE=%ERRORLEVEL%"
+if not "%APP_EXIT_CODE%"=="0" (
+  echo.
+  echo [ERROR] ClinicalExtractor stopped unexpectedly. Exit code: %APP_EXIT_CODE%
+  echo Check logs\ocr-worker.log for native OCR faults.
+  pause
+  exit /b %APP_EXIT_CODE%
+)
 exit /b 0
 
 :error

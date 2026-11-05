@@ -15,8 +15,9 @@ from .db import connect, now_iso
 MANIFEST_NAME = "clinical-extractor-ocr-transfer.json"
 TRANSFER_SUFFIX = ".ceocr"
 REPORT_FIELDS = (
-    "patient_id", "report_date", "report_type", "profile", "filename",
-    "status", "raw_text", "parser_json", "error", "transfer_key", "created_at",
+    "patient_id", "report_type", "profile", "filename",
+    "status", "raw_text", "parser_json", "error", "transfer_key", "created_at", "template_id",
+    "ocr_text_original", "ocr_text_edited",
 )
 EXTRACTION_FIELDS = (
     "source_kind", "category", "item_original", "item_standard", "value",
@@ -55,7 +56,7 @@ def create_ocr_transfer(destination: Path) -> int:
         reports = con.execute("SELECT * FROM reports WHERE raw_text<>'' ORDER BY id").fetchall()
         extractions = {
             row["id"]: [dict(x) for x in con.execute(
-                "SELECT * FROM extractions WHERE report_id=? ORDER BY id", (row["id"],)
+                "SELECT * FROM extractions WHERE report_id=? ORDER BY sort_order,id", (row["id"],)
             ).fetchall()]
             for row in reports
         }
@@ -148,7 +149,7 @@ def import_ocr_transfer(source: Path, replace_keys: set[str] | None = None) -> I
                     INSERT INTO reports(patient_id,report_date,report_type,profile,filename,file_path,status,raw_text,parser_json,error,transfer_key,created_at)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (
-                    str(record.get("patient_id", "")), str(record.get("report_date", "")),
+                    str(record.get("patient_id", "")), "",
                     str(record.get("report_type", "")), str(record.get("profile", "长文本报告")),
                     str(record.get("filename", "导入报告")), file_path,
                     str(record.get("status", "OCR已完成")), str(record.get("raw_text", "")),
@@ -156,7 +157,10 @@ def import_ocr_transfer(source: Path, replace_keys: set[str] | None = None) -> I
                     str(record.get("created_at", now_iso())),
                 ))
                 report_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
-                for item in entry.get("extractions", []):
+                con.execute("UPDATE reports SET template_id=? WHERE id=?", ('all' if record.get('profile')=='表格式报告' else '', report_id))
+                con.execute('UPDATE reports SET ocr_text_original=?,ocr_text_edited=? WHERE id=?',
+                            (str(record.get('ocr_text_original') or ''),int(record.get('ocr_text_edited',0) in (1,True,'1')),report_id))
+                for position,item in enumerate(entry.get("extractions", []),1):
                     if not isinstance(item, dict):
                         continue
                     con.execute("""
@@ -164,6 +168,7 @@ def import_ocr_transfer(source: Path, replace_keys: set[str] | None = None) -> I
                         reference_low,reference_high,abnormal_flag,evidence,page,bbox_json,confidence,reviewed,payload_json)
                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (report_id, *(item.get(field) for field in EXTRACTION_FIELDS)))
+                    con.execute('UPDATE extractions SET sort_order=? WHERE id=last_insert_rowid()',(position,))
             con.execute("""INSERT INTO transfer_imports(batch_id,imported_at,report_count) VALUES(?,?,?)
                            ON CONFLICT(batch_id) DO UPDATE SET imported_at=excluded.imported_at, report_count=excluded.report_count""",
                         (str(manifest["batch_id"]), now_iso(), len(manifest["reports"])))

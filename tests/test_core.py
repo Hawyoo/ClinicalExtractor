@@ -6,6 +6,64 @@ from clinical_extractor import db, transfer
 from pathlib import Path
 import pytest
 
+def test_cbc_contextual_units_keep_ocr_evidence():
+    from clinical_extractor.report_templates import apply_table_template
+    rows = [{'item_original': item, 'unit': unit, 'value': '130', 'evidence': 'raw evidence'}
+            for item, unit in [('HGB', '9/l'), ('MCHC', 'g/l'), ('MCV', 'fl'),
+                               ('WBC', '9/l'), ('PDW', '%'), ('HGB', '')]]
+    out = [apply_table_template([row], 'cbc')[0] for row in rows]
+    assert [r['unit'] for r in out] == ['g/L', 'g/L', 'fL', '9/l', '%', 'g/L']
+    assert out[0]['payload_json']['unit_ocr_raw'] == '9/l'
+    assert 'unit_correction' in out[0]['payload_json']
+    assert 'unit_warning' in out[3]['payload_json']
+    assert all(r['value'] == '130' and r['evidence'] == 'raw evidence' for r in out)
+
+
+def test_cbc_fuzzy_names_preserve_original_and_cell_type():
+    from clinical_extractor.report_templates import apply_table_template
+    rows = [{'item_original': name, 'unit': unit} for name, unit in [
+        ('哈碱拉细胞计数', '10^9/L'), ('嗜酸粒细胞计数', '10^9/L'),
+        ('嗜碱粒细胞百分比', '%'), ('粒细胞计数', '10^9/L'), ('BAS', '')]]
+    result = apply_table_template(rows, 'cbc')
+    assert result[0]['item_standard'] == 'BASO#'
+    assert result[0]['item_original'] == '哈碱拉细胞计数'
+    assert 'item_correction' in result[0]['payload_json']
+    assert result[1]['item_standard'] == 'EOS#'
+    assert result[2]['item_standard'] == 'BASO%'
+    assert 'item_standard' not in result[3]
+    assert 'item_standard' not in result[4]
+
+
+def test_cbc_unit_ocr_truncation_and_percent_suffix():
+    from clinical_extractor.report_templates import apply_table_template
+    rows = [{'item_original': name, 'unit': unit, 'value': '12.2'} for name, unit in [
+        ('红细胞体积分布宽度SD', 'f'), ('红细胞体积分布宽度CV', '%6'),
+        ('嗜酸粒细胞百分比', '%6'), ('平均红细胞体积', 'f1'),
+        ('红细胞计数', 'f'), ('血红蛋白', '%6'), ('红细胞体积分布宽度SD', 'pg')]]
+    result = [apply_table_template([row], 'cbc')[0] for row in rows]
+    assert [r['unit'] for r in result] == ['fL', '%', '%', 'fL', 'f', '%6', 'pg']
+    assert result[0]['payload_json']['unit_ocr_raw'] == 'f'
+    assert result[1]['payload_json']['unit_ocr_raw'] == '%6'
+    assert all(r['value'] == '12.2' for r in result)
+
+def test_delete_report_removes_uploaded_copy_and_results(tmp_path, monkeypatch):
+    from clinical_extractor import main
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.sqlite3")
+    monkeypatch.setattr(main, "UPLOAD_DIR", tmp_path)
+    db.init_db()
+    image = tmp_path / "report.jpg"
+    image.write_bytes(b"test image")
+    with db.connect() as con:
+        rid = con.execute("INSERT INTO reports(filename,file_path,created_at) VALUES(?,?,?)",
+                          (image.name, str(image), db.now_iso())).lastrowid
+        con.execute("INSERT INTO extractions(report_id) VALUES(?)", (rid,))
+    from starlette.requests import Request
+    main.delete_report(rid, Request({'type':'http','headers':[]}))
+    assert not image.exists()
+    with db.connect() as con:
+        assert con.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
+        assert con.execute("SELECT COUNT(*) FROM extractions").fetchone()[0] == 0
+
 def test_table_extractor():
     b = TableBlock(page=0, html="", rows=[["项目","结果","单位","参考范围"],["ALT","58↑","U/L","7-40"],["AST","32","U/L","13-35"]])
     out = extract_table_rows(b)

@@ -1,13 +1,22 @@
 {% extends "base.html" %}{% block content %}
-<section class="card"><h2>导入报告</h2><p class="muted">可一次选择多个文件。每份报告独立选择抽取配置；报告日期将在 OCR 后自动识别。</p><form action="/upload" method="post" enctype="multipart/form-data"><label class="patient-id">患者ID（可选，批量文件共用）<input name="patient_id"></label><label class="wide">PDF/JPG/PNG<input id="files" type="file" name="files" multiple required accept=".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.txt,.md"></label><div id="file-options" class="file-options" aria-live="polite"></div><button>导入</button></form></section>
-<section class="toolbar"><form action="/process-pending" method="post"><button>完整处理全部未处理报告</button></form><form action="/ocr-pending" method="post"><button class="secondary">仅 OCR 全部未处理报告</button></form><a class="button secondary" href="/export/csv">导出CSV</a><a class="button secondary" href="/export/xlsx?reviewed_only=1">仅导出已审核</a></section>
+<section class="card"><h2>导入报告</h2><p class="muted">可一次选择多个文件。每份报告选择表格式或长文本；表格式自动匹配全部已收录指标，仅抽取图片实际出现的项目。</p><form action="/upload" method="post" enctype="multipart/form-data"><label class="patient-id">患者ID（可选，批量文件共用）<input name="patient_id"></label><label class="wide">PDF/JPG/PNG<input id="files" type="file" name="files" multiple required accept=".pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff,.txt,.md"></label><div id="file-options" class="file-options" aria-live="polite"></div><button>导入</button></form></section>
+<section class="toolbar"><form action="/process-pending" method="post"><button>全部运行</button></form></section>
 {% if notice %}<p class="notice">{{notice}}</p>{% endif %}
-<section class="card"><h2>OCR 数据包迁移</h2><p class="muted">无 Ollama 的电脑：完成“仅 OCR”后导出专用数据包（.ceocr）。Ollama 处理机：导入数据包，再对长文本报告点击“继续大模型抽取”。同一数据包不会重复导入；CSV / Excel 仍用于导出最终结果。</p><div class="toolbar"><a class="button secondary" href="/transfer/export-ocr">导出 OCR 数据包</a><form action="/transfer/import-ocr" method="post" enctype="multipart/form-data"><input type="file" name="package" accept=".ceocr" required><button>导入 OCR 数据包</button></form></div></section>
-<section class="card"><h2>报告列表</h2><table><thead><tr><th>ID</th><th>患者</th><th>日期</th><th>类型</th><th>文件</th><th>状态</th><th>结果数</th><th></th></tr></thead><tbody>{% for r in reports %}<tr><td>{{r.id}}</td><td>{{r.patient_id}}</td><td>{{r.report_date}}</td><td>{{r.report_type}}</td><td>{{r.filename}}</td><td><span class="status">{{r.status}}</span>{% if r.error %}<details><summary>错误详情</summary><code>{{r.error}}</code></details>{% endif %}</td><td>{{r.n}}</td><td><a href="/report/{{r.id}}">查看</a></td></tr>{% else %}<tr><td colspan="8">尚无报告</td></tr>{% endfor %}</tbody></table></section>
+
+<section class="card"><div class="split"><h2>报告列表</h2><label>排序<select id="report-sort"><option value="status">按状态</option><option value="added">按添加顺序</option></select></label></div><table><thead><tr><th>患者</th><th>文件</th><th>状态</th><th>结果数</th><th>操作</th></tr></thead><tbody id="report-list-body">{% for r in reports %}<tr data-report-row="{{r.id}}" data-report-status="{{r.status}}" data-report-label="{{r.patient_id or '未填写患者ID'}} · {{r.filename}}"><td>{{r.patient_id}}</td><td>{{r.filename}}</td><td><span class="status">{{r.status}}</span></td><td data-result-count>{{r.n}}</td><td>{% with action_report=r, list_actions=True %}{% include "report_actions.html" %}{% endwith %}</td></tr>{% else %}<tr><td colspan="5">尚无报告</td></tr>{% endfor %}</tbody></table></section>
+<div id="processing-progress"></div>
+<script src="/static/report-actions.js?v=20261105-inline-delete" defer></script>
+<script src="/static/report-list.js?v=20261105-persist" defer></script>
+<script src="/static/progress.js?v=20261104-labels" defer></script>
 <script>
 const extractionModes={{ extraction_modes|tojson }};
 const filesInput=document.getElementById('files'), fileOptions=document.getElementById('file-options');
 function select(name, entries){const el=document.createElement('select');el.name=name;for(const entry of entries){const option=document.createElement('option');option.value=entry.value;option.textContent=entry.label;el.append(option)}return el}
-filesInput.addEventListener('change',()=>{fileOptions.replaceChildren();for(const file of filesInput.files){const row=document.createElement('div');row.className='file-option';const filename=document.createElement('div');filename.className='file-name';filename.textContent=file.name;const profileLabel=document.createElement('label');profileLabel.textContent='抽取配置';profileLabel.append(select('profiles',extractionModes.map(value=>({value,label:value}))));row.append(filename,profileLabel);fileOptions.append(row)}});
+filesInput.addEventListener('change',()=>{fileOptions.replaceChildren();for(const file of filesInput.files){
+const row=document.createElement('div');row.className='file-option';
+const filename=document.createElement('div');filename.className='file-name';filename.textContent=file.name;
+const profileLabel=document.createElement('label');profileLabel.textContent='抽取配置';
+const modeSelect=select('profiles',extractionModes.map(value=>({value,label:value})));profileLabel.append(modeSelect);
+row.append(filename,profileLabel);fileOptions.append(row)}});
 </script>
 {% endblock %}

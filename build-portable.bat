@@ -2,6 +2,22 @@
 setlocal
 cd /d "%~dp0"
 set "UV_CACHE_DIR=%CD%\.uv-cache"
+set "PORTABLE=dist\ClinicalExtractor"
+set "DATA_BACKUP=.portable-data-backup"
+
+rem PyInstaller recreates dist. Preserve any real reports stored by a prior
+rem Portable edition before the build removes that directory.
+if exist "%DATA_BACKUP%" (
+  echo [ERROR] A previous Portable data backup exists: %CD%\%DATA_BACKUP%
+  echo Check it first, then rename or remove it before rebuilding.
+  pause
+  exit /b 1
+)
+if exist "%PORTABLE%\data" (
+  echo Preserving existing Portable data...
+  robocopy "%PORTABLE%\data" "%DATA_BACKUP%" /E /R:1 /W:1 >nul
+  if errorlevel 8 goto :error
+)
 
 echo [1/5] Checking the source environment...
 call "%~dp0start-windows.bat" --prepare
@@ -21,7 +37,6 @@ echo [4/5] Building the Windows Portable. This can take several minutes...
 if errorlevel 1 goto :error
 
 echo [5/5] Preparing Portable startup files and offline OCR cache...
-set "PORTABLE=dist\ClinicalExtractor"
 if not exist "%PORTABLE%\data\uploads" mkdir "%PORTABLE%\data\uploads"
 if not exist "%PORTABLE%\data\exports" mkdir "%PORTABLE%\data\exports"
 if not exist "%PORTABLE%\logs" mkdir "%PORTABLE%\logs"
@@ -33,6 +48,12 @@ copy /Y "docs\WINDOWS_PORTABLE.md" "%PORTABLE%\WINDOWS_PORTABLE.md" >nul
 copy /Y "scripts\portable-startup.ps1" "%PORTABLE%\portable-startup.ps1" >nul
 copy /Y "scripts\Start-ClinicalExtractor.bat" "%PORTABLE%\Start-ClinicalExtractor.bat" >nul
 copy /Y "static\clinical-extractor.ico" "%PORTABLE%\clinical-extractor.ico" >nul
+if exist "%DATA_BACKUP%" (
+  echo Restoring existing Portable data...
+  robocopy "%DATA_BACKUP%" "%PORTABLE%\data" /E /R:1 /W:1 >nul
+  if errorlevel 8 goto :error
+  rmdir /S /Q "%DATA_BACKUP%"
+)
 
 echo.
 echo Done: %CD%\%PORTABLE%\ClinicalExtractor.exe

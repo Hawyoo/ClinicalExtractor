@@ -1,7 +1,7 @@
 [project]
 name = "clinical-extractor"
 version = "1.0.0"
-description = "Local clinical report extractor using PP-StructureV3 + LangExtract + Ollama"
+description = "Local clinical report extractor using PP-OCRv5 + SLANet_plus + LangExtract + Ollama"
 # The Windows bootstrap script provisions CPython 3.12 via uv. Pinning this
 # protects the PaddleOCR document-parser stack from unsupported combinations.
 requires-python = ">=3.12,<3.13"

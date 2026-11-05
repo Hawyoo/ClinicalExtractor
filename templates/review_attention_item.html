@@ -1,0 +1,4 @@
+<div class="evidence attention-evidence {% if x.attention.pairing %}pairing-evidence{% endif %}" data-review-priority="{{x.attention.priority}}" id="audit-{{x.id}}"><b>{{x.display_name}}</b> · {{x.attention.label}}{% if x.reviewed %} · 已确认{% endif %}<p>原文：{{x.evidence}}</p>
+{% for note in x.attention.warnings %}<p class="attention-warning">{{note}}</p>{% endfor %}
+{% for note in x.attention.corrections %}<p>{{note}}</p>{% endfor %}
+</div>
