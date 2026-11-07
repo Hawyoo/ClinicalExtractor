@@ -1,5 +1,11 @@
 # Local Python / uv environments and dependency caches
 .venv/
+.venv-macos/
+.uv-tools/
+*.dmg
+*.dmg.sha256
+*.icns
+*.iconset/
 venv/
 .uv-cache/
 .uv-local/

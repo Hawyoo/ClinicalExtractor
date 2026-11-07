@@ -1,6 +1,6 @@
 # ClinicalExtractor
 
-本地临床报告整理工具，支持 Windows 源码启动与离线 OCR 便携版。
+本地临床报告整理工具，支持 Windows 源码启动、离线 OCR 便携版，以及 Apple Silicon macOS DMG 构建。
 
 ## 当前流程
 
@@ -49,6 +49,12 @@
 OCR 使用 CPU，自动最多 6 个线程；运行设置支持手动调整。设置 `gpu` 不能让 CPU Paddle 使用 AMD GPU。当前固定 PaddlePaddle 3.3.1 与 PaddleX 3.7.2，oneDNN 关闭。
 
 构建前会保留既有便携版数据；归档文件位于根目录 `DELETE`，不进入运行或发布包。源码变化后须重新构建 EXE。
+
+## macOS 打包
+
+在 M 系列 Mac 的项目目录执行 `bash build-macos.command`。脚本自动准备独立 Python 3.12、当前 OCR 依赖和三个离线模型，构建 `.app` 并生成带版本与时间的 DMG，输出到 `dist/macos/<构建时间>/`。不能在 Windows 上直接交叉构建，也不支持用当前依赖生成 Intel Mac 包。
+
+安装后双击应用打开默认浏览器；数据保存在 `~/Library/Application Support/ClinicalExtractor/`，更新应用不会覆盖项目、模板或设置。Ollama 需另行安装或连接。可配置 Developer ID 签名及 Apple 公证；具体操作见 [macOS 使用与发布说明](docs/MACOS_DMG.md)。Mac 安装、OCR 与 Ollama 仍需实机验证。
 
 ## 开发验证
 
