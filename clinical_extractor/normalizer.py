@@ -55,7 +55,8 @@ def item_abbreviation(item: dict, catalog=None) -> str:
     for template in (table_templates() if catalog is None else catalog).values():
         for definition in template['items']:
             if any(standard.casefold() == str(alias).casefold()
-                   for alias in [definition['code'], definition['name'], *definition.get('aliases', [])]):
+                   for alias in [definition['code'], definition['name'], definition.get('display_name',''),
+                                 definition.get('abbreviation',''), *definition.get('aliases', [])]):
                 return definition.get('abbreviation', definition['code'])
     normalized = normalize_item(standard)
     known = set(ITEM_MAP.values())

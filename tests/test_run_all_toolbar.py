@@ -1,3 +1,4 @@
+from clinical_extractor import config
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 @pytest.mark.parametrize('ready',[True,False])
 def test_run_all_skips_review_and_active_states_and_selects_ai_handoff(tmp_path,monkeypatch,ready):
     from clinical_extractor import db,main
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     monkeypatch.setattr(main,'resume_pending_jobs',lambda:None)
     monkeypatch.setattr(main,'ollama_available',lambda:ready)
     monkeypatch.setattr(main,'is_busy',lambda rid:False)
@@ -31,7 +32,7 @@ def test_run_all_skips_review_and_active_states_and_selects_ai_handoff(tmp_path,
         assert not page.select('a[href*="reviewed_only"]')
         menu=page.select_one('header details.toolbar-menu')
         assert menu and not menu.has_attr('open')
-        assert menu.select_one('form[action="/transfer/import-ocr"]')
+        assert menu.select_one('form[action="/transfer/import"]')
 
 
 @pytest.mark.parametrize('models,expected', [([{'name':'qwen3:8b'}],True),([],False),([{'name':'other:8b'}],False)])

@@ -1,7 +1,6 @@
 from __future__ import annotations
 import re
 import json
-from copy import deepcopy
 from difflib import SequenceMatcher
 import yaml
 from .config import PROFILE_DIR
@@ -9,49 +8,23 @@ from .config import PROFILE_DIR
 ALL_TEMPLATE_ID = 'all'
 
 
-def merge_templates(templates: dict) -> dict:
-    """Combine definitions by analyte code; similar names/ranges never merge codes."""
-    merged = {}
-    for template in templates.values():
-        for definition in template.get('items',[]):
-            code = definition['code']
-            if code not in merged:
-                merged[code] = deepcopy(definition)
-                continue
-            item = merged[code]
-            item['aliases'] = list(dict.fromkeys([*item.get('aliases',[]),
-                definition['name'], definition.get('display_name',definition['name']),
-                *definition.get('aliases',[])]))
-            references = [*item.get('alternative_reference_ranges',[]),
-                          definition.get('reference_range',''),*definition.get('alternative_reference_ranges',[])]
-            item['alternative_reference_ranges'] = list(dict.fromkeys(r for r in references if r and r!=item.get('reference_range')))
-            units = [*item.get('alternative_units',[]),definition.get('expected_unit',''),*definition.get('alternative_units',[])]
-            item['alternative_units'] = list(dict.fromkeys(ascii_unit(u) for u in units if u and u!=item.get('expected_unit')))
-    return dict(id=ALL_TEMPLATE_ID,name='表格式报告',coverage='partial',
-                missing_policy='只匹配当前图片实际出现的指标，不补项目或结果；存在多个候选时保留核对提示',
-                items=list(merged.values()))
 
 
 def table_templates() -> dict:
-    templates = {}
-    legacy_ids = []
-    for path in sorted((PROFILE_DIR / 'table_templates').glob('*.yaml')):
-        template = yaml.safe_load(path.read_text(encoding='utf-8'))
-        # Keep canonical template units portable even for newly added templates.
-        for item in template.get('items', []):
-            if item.get('expected_unit'):
-                item['expected_unit'] = ascii_unit(item['expected_unit'])
-            if item.get('alternative_units'):
-                item['alternative_units'] = list(dict.fromkeys(ascii_unit(u) for u in item['alternative_units']))
-        templates[template['id']] = template
-        legacy_ids.extend(template.get('legacy_ids', []))
-    catalog = {**templates, ALL_TEMPLATE_ID:merge_templates(templates)}
-    # Old report payloads and transfer packages can still carry these IDs.
-    # They resolve to the same unified catalog, never a separate matching scope.
-    for legacy_id in legacy_ids:
-        if legacy_id not in catalog:
-            catalog[legacy_id] = catalog[ALL_TEMPLATE_ID]
-    return catalog
+    path = PROFILE_DIR / 'table_templates' / 'lab_test_template.yaml'
+    source = path.read_text(encoding='utf-8')
+    template = yaml.safe_load(source)
+    from .template_editor import merge_custom
+    template = merge_custom(template, source)
+    codes = [item['code'] for item in template['items']]
+    if len(codes) != len(set(codes)):
+        raise ValueError('检验模板存在重复项目代码')
+    for item in template['items']:
+        if item.get('expected_unit'):
+            item['expected_unit'] = ascii_unit(item['expected_unit'])
+        if item.get('alternative_units'):
+            item['alternative_units'] = list(dict.fromkeys(ascii_unit(u) for u in item['alternative_units']))
+    return {ALL_TEMPLATE_ID: template}
 
 
 def _key(text: str) -> str:
@@ -59,7 +32,9 @@ def _key(text: str) -> str:
 
 
 def ascii_unit(unit: str) -> str:
-    return str(unit or '').replace('\u03bc', 'u').replace('\u00b5', 'u')
+    text = str(unit or '').replace('\u03bc', 'u').replace('\u00b5', 'u')
+    digits = str.maketrans('⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺', '0123456789-+')
+    return re.sub(r'[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]+', lambda m: '^' + m[0].translate(digits), text)
 
 
 def template_order(item: dict, template_id: str, catalog=None) -> int:
@@ -68,7 +43,8 @@ def template_order(item: dict, template_id: str, catalog=None) -> int:
         return 0
     name = _key(str(item.get('item_standard') or item.get('item_original') or ''))
     for index, definition in enumerate(template['items']):
-        aliases = [definition['code'], definition['name'], definition.get('display_name', ''), *definition.get('aliases', [])]
+        aliases = [definition['code'], definition['name'], definition.get('display_name', ''),
+                   definition.get('abbreviation', ''), *definition.get('aliases', [])]
         if name and any(name == _key(str(alias)) for alias in aliases if alias):
             return index
     return len(template['items'])
@@ -98,7 +74,7 @@ def _normalize_unit(record: dict, item: dict, payload: dict) -> None:
     if canonical is None and mol and expected.casefold() == mol[1]+'mol/l':
         canonical = expected
         reason = '按已匹配项目校正单位中的 m/n 和 L/1 字形混淆'
-    if (canonical is None and expected == 'mL/min/1.73m²'
+    if (canonical is None and expected == 'mL/min/1.73m^2'
             and re.fullmatch(r'ml/min/1[.,]73m(?:\^?2|²|["”\x27]2)?', token)):
         canonical = expected
         reason = '补正体表面积单位缺失或误识别的平方标记'
@@ -178,9 +154,10 @@ def _candidate(record, item):
         return None
     base, annotations = _name_parts(record.get('item_original', ''))
     name = _key(base)
-    aliases = [_key(a) for a in [item['name'], item['code'], *item.get('aliases', [])]]
+    aliases = [_key(a) for a in [item['name'], item['code'], item.get('display_name', ''),
+                               item.get('abbreviation', ''), *item.get('aliases', [])] if a]
     aliases.extend(_key(_name_parts(a)[0]) for a in
-                   [item['name'], *item.get('aliases', [])])
+                   [item['name'], item.get('display_name', ''), *item.get('aliases', [])] if a)
     exact = bool(name) and name in aliases
     # With a missing opening bracket, retain a complete Chinese alias followed
     # only by an abbreviation. Do not split internal letters/digits in C1q etc.
@@ -282,6 +259,8 @@ def apply_table_template(records: list[dict], template_id: str) -> list[dict]:
         match = matches.get(index)
         item = match['item'] if match else None
         if item:
+            if payload.get('template_warning') == '模板外项目，或名称、参考范围与单位未能唯一对齐；保留原报告内容，请核对':
+                payload.pop('template_warning', None)
             if match['reference_conflict']:
                 payload['template_warning'] = '项目名称明确，但报告参考范围与参考模板不同；保留报告原范围，请核对'
             elif payload.get('template_warning') == '项目名称明确，但报告参考范围与参考模板不同；保留报告原范围，请核对':
@@ -340,7 +319,7 @@ def fill_missing_template_unit(record: dict, template_id: str, catalog=None) -> 
 
 
 def refresh_reference_warning(record: dict, template_id: str, catalog=None) -> None:
-    """Retire obsolete range-only warnings when an existing result matches a new variant."""
+    """Refresh obsolete template warnings without rerunning OCR/AI or reviews."""
     payload = record.get('payload_json') or {}
     if isinstance(payload, str):
         try:
@@ -349,6 +328,16 @@ def refresh_reference_warning(record: dict, template_id: str, catalog=None) -> N
             return
     if not isinstance(payload,dict):
         return
+    if payload.get('template_warning') == '模板外项目，或名称、参考范围与单位未能唯一对齐；保留原报告内容，请核对':
+        template = (catalog if catalog is not None else table_templates()).get(template_id, {})
+        # Only an unambiguous exact name/alias can retire an old identity warning.
+        candidates = [c for item in template.get('items', [])
+                      if (c := _candidate({**record, 'payload_json':payload}, item))
+                      and c['name_exact'] and not c['reference_conflict']]
+        if len(candidates) == 1:
+            refreshed = apply_table_template([{**record, 'payload_json':payload}], template_id)[0]
+            record.update(refreshed)
+            payload = record['payload_json']
     if _ambiguous_reference(payload.get('reference_raw', '')):
         payload = dict(payload)
         if payload.get('template_warning') == '项目名称明确，但报告参考范围与参考模板不同；保留报告原范围，请核对':

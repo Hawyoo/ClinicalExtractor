@@ -5,9 +5,7 @@ import sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-# PaddlePaddle 3.3's oneDNN CPU execution path can fail on PP-StructureV3
-# model attributes on some Windows hosts.  The standard CPU kernels remain
-# fully functional and are materially more reliable for a local desktop app.
+# Use the verified standard CPU execution path.
 # This must be set before PaddlePaddle is imported anywhere in the process.
 os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
@@ -21,6 +19,8 @@ DATA_DIR = Path(os.getenv("CLINICAL_EXTRACTOR_DATA", PORTABLE_ROOT / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 EXPORT_DIR = DATA_DIR / "exports"
 DB_PATH = DATA_DIR / "clinical_extractor.sqlite3"
+PROJECT_DIR = DATA_DIR
+PROJECT_MANAGER = None
 SETTINGS_PATH = DATA_DIR / "settings.json"
 AUTO_OCR_THREADS = 6  # 7500F: 6 and 11 threads tied on the local two-report benchmark.
 
@@ -39,12 +39,7 @@ class Settings:
     ollama_model: str = "qwen3:8b"
     pp_device: str = "cpu"
     ocr_cpu_threads: int = 0
-    use_doc_orientation_classify: bool = True
-    use_doc_unwarping: bool = False
-    use_textline_orientation: bool = True
-    use_formula_recognition: bool = False
     max_text_chars: int = 12000
-    mock_mode: bool = False
 
 
 def load_settings() -> Settings:
@@ -60,3 +55,25 @@ def load_settings() -> Settings:
 
 def save_settings(settings: Settings) -> None:
     SETTINGS_PATH.write_text(json.dumps(asdict(settings), ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def initialize_projects():
+    global PROJECT_MANAGER
+    from .projects import ProjectManager
+    manager = ProjectManager(DATA_DIR)
+    manager.initialize()
+    PROJECT_MANAGER = manager
+    activate_project(manager.active())
+
+
+def activate_project(entry):
+    global PROJECT_DIR, DB_PATH, UPLOAD_DIR, EXPORT_DIR
+    if entry is None:
+        PROJECT_DIR = DB_PATH = UPLOAD_DIR = EXPORT_DIR = None
+        return
+    PROJECT_DIR = Path(entry['path'])
+    DB_PATH = PROJECT_DIR / 'clinical_extractor.sqlite3'
+    UPLOAD_DIR = PROJECT_DIR / 'uploads'
+    EXPORT_DIR = PROJECT_DIR / 'exports'
+    for path in (UPLOAD_DIR, EXPORT_DIR):
+        path.mkdir(parents=True, exist_ok=True)

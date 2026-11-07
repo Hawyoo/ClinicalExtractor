@@ -22,9 +22,9 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 echo [3/3] Checking ClinicalExtractor dependencies...
-uv pip install --python ".venv\Scripts\python.exe" -e ".[ocr,dev]"
+uv pip install --python ".venv\Scripts\python.exe" -e ".[ocr]"
 if errorlevel 1 goto :error
-".venv\Scripts\python.exe" -c "import paddle; from paddleocr import PPStructureV3; import langextract"
+".venv\Scripts\python.exe" -c "import paddle; from paddlex import create_pipeline; import langextract"
 if errorlevel 1 goto :error
 
 if /i "%~1"=="--prepare" exit /b 0

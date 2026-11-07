@@ -1,3 +1,4 @@
+from clinical_extractor import config
 from threading import Event
 import time
 
@@ -8,7 +9,7 @@ from fastapi.testclient import TestClient
 @pytest.mark.parametrize('stage', ['ocr', 'llm'])
 def test_completed_report_requeues_and_status_is_polled(tmp_path, monkeypatch, stage):
     from clinical_extractor import db, jobs, service, main
-    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'reports.sqlite3')
     db.init_db()
     with db.connect() as con:
         ids = [con.execute('''INSERT INTO reports(filename,file_path,status,raw_text,created_at)

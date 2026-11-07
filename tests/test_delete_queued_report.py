@@ -1,3 +1,4 @@
+from clinical_extractor import config
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
@@ -9,8 +10,8 @@ from fastapi.testclient import TestClient
 @pytest.mark.parametrize('stage', ['ocr', 'llm'])
 def test_queued_report_deletion_cancels_both_lanes_and_running_is_blocked(tmp_path, monkeypatch, stage):
     from clinical_extractor import db, jobs, main, service
-    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'reports.sqlite3')
-    monkeypatch.setattr(main, 'UPLOAD_DIR', tmp_path)
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'reports.sqlite3')
+    monkeypatch.setattr(config, 'UPLOAD_DIR', tmp_path)
     monkeypatch.setattr(jobs, '_jobs', {})
     executors = {name:ThreadPoolExecutor(max_workers=1) for name in ('ocr','llm')}
     monkeypatch.setattr(jobs, '_executors', executors)

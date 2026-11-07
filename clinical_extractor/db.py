@@ -2,16 +2,15 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
-from .config import DB_PATH
+from . import config
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   patient_id TEXT NOT NULL DEFAULT '',
-  report_date TEXT NOT NULL DEFAULT '',
   report_type TEXT NOT NULL DEFAULT '未分类',
-  profile TEXT NOT NULL DEFAULT 'generic',
+  profile TEXT NOT NULL DEFAULT '表格式报告',
   filename TEXT NOT NULL,
   file_path TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT '未处理',
@@ -61,9 +60,11 @@ CREATE TABLE IF NOT EXISTS ocr_text_revisions (
 
 @contextmanager
 def connect():
+    if config.DB_PATH is None:
+        raise ValueError('请先创建或打开项目')
     # OCR and AI have separate workers; short write transactions can wait for
     # one another without failing a large batch on a transient database lock.
-    con = sqlite3.connect(DB_PATH, timeout=30)
+    con = sqlite3.connect(config.DB_PATH, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
     try:
@@ -78,7 +79,6 @@ def init_db():
         con.executescript(SCHEMA)
         # Legacy column stays for compatibility with old databases/packages,
         # but report dates are no longer retained as structured metadata.
-        con.execute("UPDATE reports SET report_date='' WHERE report_date<>''")
         columns = {row["name"] for row in con.execute("PRAGMA table_info(reports)")}
         if "template_id" not in columns:
             con.execute("ALTER TABLE reports ADD COLUMN template_id TEXT NOT NULL DEFAULT ''")
@@ -100,6 +100,25 @@ def init_db():
         import uuid
         for row in con.execute("SELECT id FROM reports WHERE transfer_key='' ").fetchall():
             con.execute("UPDATE reports SET transfer_key=? WHERE id=?", (str(uuid.uuid4()), row["id"]))
+        normalize_stored_unit_powers(con)
+
+
+def normalize_stored_unit_powers(con):
+    """Migrate unit typography only; never invalidate existing reviews."""
+    import re
+    from .report_templates import ascii_unit
+    updates = []
+    for row in con.execute('SELECT id,item_standard,unit FROM extractions').fetchall():
+        raw = row['unit']
+        # Keep all non-exponent unit spelling intact in this migration.
+        unit = ascii_unit(raw) if re.search('[⁰¹²³⁴⁵⁶⁷⁸⁹⁻⁺]', raw) else raw
+        if row['item_standard'].casefold() in {'egfr', 'egfr-epi'} and re.fullmatch(
+                r'ml/min/1[.,]73m(?:\^?2|["”\x27]2)?', unit.replace(' ', ''), re.I):
+            unit = 'mL/min/1.73m^2'
+        if unit != raw:
+            updates.append((unit, row['id']))
+    con.executemany('UPDATE extractions SET unit=? WHERE id=?', updates)
+    return len(updates)
 
 
 def now_iso():

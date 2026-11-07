@@ -1,7 +1,8 @@
+from clinical_extractor import config
 import json
 from types import SimpleNamespace
 import pytest
-from clinical_extractor.grounding import value_is_grounded, ungrounded_legacy_ai
+from clinical_extractor.grounding import value_is_grounded, ungrounded_ai_result
 from clinical_extractor.parser import TableBlock
 from clinical_extractor.table_extractor import extract_table_rows
 
@@ -31,7 +32,7 @@ def test_table_ai_cannot_write_a_generated_value(monkeypatch):
     monkeypatch.setattr(text_extractor,'_progress_model',lambda settings:fake)
     monkeypatch.setattr(table_ai,'load_settings',lambda:SimpleNamespace(mock_mode=False))
     rows=[dict(item_original='白细胞计数',value='5.1',unit='10^9/L',payload_json={})]
-    result=table_ai.correct_names(rows,'cbc')
+    result=table_ai.correct_names(rows,'all')
     assert result[0]['value']=='5.1'
     assert not result[0]['payload_json'].get('ai_template_code')
     assert rows[0]['value']=='5.1'
@@ -39,12 +40,12 @@ def test_table_ai_cannot_write_a_generated_value(monkeypatch):
 
 def test_table_with_only_names_stops_before_ai(tmp_path,monkeypatch):
     from clinical_extractor import db,service
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'test.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'test.sqlite3')
     db.init_db()
     with db.connect() as con:
         rid=con.execute('''INSERT INTO reports(profile,filename,file_path,created_at,raw_text,parser_json,template_id)
                            VALUES(?,?,?,?,?,?,?)''',('表格式报告','a.png','a.png',db.now_iso(),
-                                                    '白细胞计数\n红细胞计数','[{}]','cbc')).lastrowid
+                                                    '白细胞计数\n红细胞计数','[{}]','all')).lastrowid
     with pytest.raises(ValueError,match='不能根据项目名单'):
         service.process_report(rid,'llm')
     with db.connect() as con:
@@ -54,6 +55,6 @@ def test_table_with_only_names_stops_before_ai(tmp_path,monkeypatch):
 def test_old_unverified_ai_table_results_are_not_exportable():
     record=dict(profile='表格式报告',source_kind='text',value='5.2',evidence='白细胞计数',
                 item_original='白细胞计数',unit='10^9/L',payload_json={'char_start':0})
-    assert ungrounded_legacy_ai(record)
+    assert ungrounded_ai_result(record)
     record['payload_json']['manual_value_verified']=True
-    assert not ungrounded_legacy_ai(record)
+    assert not ungrounded_ai_result(record)

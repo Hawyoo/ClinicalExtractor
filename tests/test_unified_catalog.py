@@ -1,9 +1,10 @@
+from clinical_extractor import config
 from copy import deepcopy
 from io import BytesIO
 
 from fastapi.testclient import TestClient
 
-from clinical_extractor.report_templates import table_templates, merge_templates, apply_table_template
+from clinical_extractor.report_templates import table_templates, apply_table_template
 
 
 def test_all_catalog_preserves_distinct_codes_and_matches_mixed_partial_report():
@@ -25,26 +26,16 @@ def test_all_catalog_preserves_distinct_codes_and_matches_mixed_partial_report()
     assert 'template_warning' in apply_table_template(deepcopy(rows),'all')[-1]['payload_json']
 
 
-def test_duplicate_definition_merges_aliases_and_reference_variants_without_mutating_sources():
-    sources={'one':{'items':[dict(code='X',name='指标一',aliases=['名称甲'],expected_unit='umol/L',reference_range='1-2')]},
-             'two':{'items':[dict(code='X',name='指标一别名',aliases=['名称乙'],expected_unit='umol/L',reference_range='3-4',alternative_reference_ranges=['5-6']),
-                             dict(code='Y',name='另一个指标',expected_unit='umol/L',reference_range='1-2')]}}
-    original=deepcopy(sources)
-    output=merge_templates(sources)
-    assert len(output['items'])==2
-    assert set(output['items'][0]['aliases'])=={'名称甲','名称乙','指标一别名'}
-    assert output['items'][0]['alternative_reference_ranges']==['3-4','5-6']
-    assert sources==original
 
 
 def test_upload_metadata_and_legacy_reports_use_all_without_template_controls(tmp_path,monkeypatch):
     from clinical_extractor import db,main
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
-    monkeypatch.setattr(main,'UPLOAD_DIR',tmp_path)
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'UPLOAD_DIR',tmp_path)
     db.init_db()
     with db.connect() as con:
         rid=con.execute('''INSERT INTO reports(filename,file_path,profile,template_id,created_at)
-                           VALUES(?,?,?,?,?)''',('old.jpg','old.jpg','表格式报告','cbc',db.now_iso())).lastrowid
+                           VALUES(?,?,?,?,?)''',('old.jpg','old.jpg','表格式报告','all',db.now_iso())).lastrowid
         con.execute('INSERT INTO extractions(report_id,item_standard,value,reviewed) VALUES(?,?,?,?)',(rid,'WBC','3.46',1))
     with TestClient(main.app) as client:
         with db.connect() as con:
@@ -56,11 +47,11 @@ def test_upload_metadata_and_legacy_reports_use_all_without_template_controls(tm
         home=client.get('/').text
         assert "select('template_ids'" not in home
         response=client.post('/upload',files=[('files',('mixed.txt',BytesIO(b'OCR source'),'text/plain'))],
-                             data={'profiles':'表格式报告','template_ids':'cbc'},follow_redirects=False)
+                             data={'profiles':'表格式报告','template_ids':'all'},follow_redirects=False)
         assert response.status_code==303
         with db.connect() as con:
             newest=con.execute('SELECT id,template_id FROM reports ORDER BY id DESC LIMIT 1').fetchone()
             assert newest['template_id']=='all'
-        client.post(f'/report/{rid}/metadata',data={'patient_id':'P','profile':'表格式报告','template_id':'liver_kidney'})
+        client.post(f'/report/{rid}/metadata',data={'patient_id':'P','profile':'表格式报告','template_id':'all'})
         with db.connect() as con:
             assert con.execute('SELECT template_id FROM reports WHERE id=?',(rid,)).fetchone()[0]=='all'

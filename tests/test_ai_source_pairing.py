@@ -74,7 +74,7 @@ def test_red_pairing_marker_is_rendered_in_review_row():
 
 
 def test_quantity_audit_uses_repaired_results_instead_of_old_table_duplicates():
-    from clinical_extractor.ocr_row_repair import saved_assignment_warnings
+    from clinical_extractor.row_validation import saved_assignment_warnings
     rows,page,_=sample()
     page['table_res_list']=[{'pred_html':'<table><tr><td>项目</td><td>结果</td></tr>'
         '<tr><td>Alpha</td><td>11</td></tr><tr><td>Beta</td><td>11</td></tr><tr><td>Gamma</td><td>33</td></tr></table>'}]
@@ -104,24 +104,6 @@ def test_merged_range_fragment_must_match_the_named_project(monkeypatch):
     assert all('ai_pairing' not in r['payload_json'] for r in result)
 
 
-def test_audit_rollback_requires_unreviewed_unchanged_result_and_proven_original_source():
-    rows,page,proposal=sample()
-    row=deepcopy(rows[1])
-    # The Beta/uric-acid row physically owns 22; the erroneous AI selected 33.
-    _,values,refs=table_pairing.sources(page)
-    row.update(value='33',reviewed=0)
-    row['payload_json']=dict(reference_raw='1-3',ai_pairing=dict(
-        before=dict(value='22',reference='',evidence='original evidence'),
-        after=dict(value='33',reference='1-3'),value_source=next(t for t in values if t['text']=='33')))
-    restored=table_pairing.restore_invalid_pairing(row,[page])
-    assert restored['value']=='22'
-    assert restored['payload_json']['reference_raw']==''
-    assert 'ai_pairing' not in restored['payload_json'] and restored['payload_json']['rejected_ai_pairing']
-    assert restored['evidence']=='original evidence'
-    row['reviewed']=1
-    assert table_pairing.restore_invalid_pairing(row,[page]) is None
-    row['reviewed']=0;row['value']='123'
-    assert table_pairing.restore_invalid_pairing(row,[page]) is None
 
 
 def test_uric_acid_373_and_cystatin_1_11_cannot_be_swapped(monkeypatch):

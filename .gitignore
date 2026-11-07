@@ -30,6 +30,7 @@ node_modules/
 
 # Patient reports, local database/settings, exports and transfer staging
 /data/
+/projects/
 /uploads/
 /exports/
 *.sqlite3

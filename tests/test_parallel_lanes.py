@@ -72,7 +72,7 @@ def test_pipeline_hands_off_while_next_ocr_runs(monkeypatch):
             ai_second.set()
         return 1
     monkeypatch.setattr(service, 'process_report', work)
-    jobs.start_job(83001,'full'); jobs.start_job(83002,'full')
+    jobs.start_job(83001,'ocr',then_ai=True); jobs.start_job(83002,'ocr',then_ai=True)
     try:
         assert ai_first.wait(2) and ocr_second.wait(2)
         assert not ai_second.is_set()
@@ -88,6 +88,6 @@ def test_failed_ocr_does_not_enter_ai_pipeline(monkeypatch):
         calls.append(stage)
         raise RuntimeError('test OCR failed')
     monkeypatch.setattr(service, 'process_report', work)
-    jobs.start_job(84001,'full')
+    jobs.start_job(84001,'ocr',then_ai=True)
     wait_done(84001)
     assert calls == ['ocr']

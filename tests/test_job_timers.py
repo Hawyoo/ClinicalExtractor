@@ -18,7 +18,7 @@ def test_queue_time_is_excluded_and_total_survives_ocr_ai_handoff(monkeypatch):
         return 1
     monkeypatch.setattr(service,'process_report',work)
     try:
-        jobs.start_job(87001,'full')
+        jobs.start_job(87001,'ocr',then_ai=True)
         assert ocr_entered.wait(2)
         jobs.start_job(87002,'ocr')
         clock.value=110

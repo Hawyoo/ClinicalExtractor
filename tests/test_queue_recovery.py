@@ -1,6 +1,7 @@
+from clinical_extractor import config
 def test_restart_restores_pending_stages_once_and_preserves_completed_results(tmp_path,monkeypatch):
     from clinical_extractor import db,jobs
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     db.init_db()
     states=['OCR排队中','OCR处理中','AI排队中','AI处理中','已审核']
     with db.connect() as con:

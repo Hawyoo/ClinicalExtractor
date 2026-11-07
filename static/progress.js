@@ -3,6 +3,10 @@
   if (!host) return;
   const states = {queued:'排队中', running:'处理中', completed:'已完成', failed:'失败'};
   const forms = Array.from(document.querySelectorAll('[data-process-report]'));
+  function processStage(form) {
+    if (['ocr', 'llm'].includes(form.dataset.processStage)) return form.dataset.processStage;
+    return new URL(form.action, location.href).pathname.endsWith('/llm') ? 'llm' : 'ocr';
+  }
   function reportLabel(job) {
     const row=Array.from(document.querySelectorAll('[data-report-row]')).find(row=>row.dataset.reportRow===String(job.report_id));
     if (row?.dataset.reportLabel) return row.dataset.reportLabel;
@@ -19,12 +23,12 @@
       if (label) label.textContent = status;
       if (['OCR已完成','待审核','已审核'].includes(status)) {
         const button = form.querySelector('button');
-        if (button) button.textContent = form.action.endsWith('/llm') ? '重新 AI' : '重新 OCR';
+        if (button) button.textContent = processStage(form) === 'llm' ? '重新 AI' : '重新 OCR';
       }
     }
   }
   for (const form of forms) {
-    const stage = form.action.endsWith('/llm') ? 'llm' : 'ocr';
+    const stage = processStage(form);
     const button = form.querySelector('button');
     const status = form.closest('tr')?.querySelector('.status')?.textContent || document.getElementById('report-status')?.textContent;
     if (button && ['OCR已完成','待审核','已审核'].includes(status?.trim())) {
@@ -116,7 +120,7 @@
         group.append(heading);host.append(group);lanes[stage]=group;
       }
       document.querySelectorAll('[data-process-report]').forEach(form=>{
-        const stage=form.action.endsWith('/llm')?'llm':'ocr';
+        const stage=processStage(form);
         const busy=jobs.some(j=>String(j.report_id)===form.dataset.processReport && j.stage===stage && ['queued','running'].includes(j.state));
         form.querySelectorAll('button').forEach(b=>b.disabled=busy || Boolean(form.dataset.submitting));
       });

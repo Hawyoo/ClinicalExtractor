@@ -46,7 +46,7 @@ def html_to_rows(html: str) -> list[list[str]]:
     return rows
 
 def lightweight_pipeline_config(table_mode: bool = True) -> dict:
-    """BCE-style OCR plus the official SLANet+ matching pipeline, no layout models."""
+    """PP-OCRv5 with the SLANet+ fallback, without layout models."""
     ocr = {
         'pipeline_name': 'OCR', 'text_type': 'general',
         'use_doc_preprocessor': False, 'use_textline_orientation': False,
@@ -256,7 +256,7 @@ class LightweightPipeline:
             self.table = self._create_pipeline(config=config, **self._kwargs)
 
     def _coordinate_result(self, ocr, repairs):
-        from .ocr_row_repair import assignment_warnings
+        from .row_validation import assignment_warnings
         rows = coordinate_table_rows(ocr)
         if not rows:
             return None
@@ -292,7 +292,7 @@ class LightweightPipeline:
                 yield data
                 continue
             image = ocr['doc_preprocessor_res']['output_img']
-            from .ocr_row_repair import assignment_warnings
+            from .row_validation import assignment_warnings
             # Keep the first OCR's text/coordinates. No crop or second OCR pass.
             repairs = []
             emit('坐标恢复未通过核验，正在使用表格模型')
@@ -321,21 +321,17 @@ class LightweightPipeline:
                 yield data
 
 
-class PPStructureParser:
-    # Keep the old class name for callers and existing scripts.
-    def __init__(self, cpu_threads=None, enable_mkldnn=False):
+class ReportParser:
+    def __init__(self, cpu_threads=None):
         self._pipeline = None
         self._table_mode = None
         self._cpu_threads = cpu_threads
-        self._enable_mkldnn = enable_mkldnn
         self._pipeline_key = None
 
     def _get_pipeline(self, table_mode: bool = True):
         settings = load_settings()
-        if settings.mock_mode:
-            return None
         threads = ocr_thread_count(self._cpu_threads if self._cpu_threads is not None else settings.ocr_cpu_threads)
-        key = (table_mode,settings.pp_device,threads,self._enable_mkldnn)
+        key = (table_mode,settings.pp_device,threads)
         if self._pipeline is None or self._pipeline_key != key:
             self._pipeline = None
             emit('正在加载 OCR 模型（首次加载需要等待）')
@@ -345,17 +341,17 @@ class PPStructureParser:
             except Exception as e:
                 raise RuntimeError(
                     "未安装 OCR 依赖。请运行 scripts/install-windows.ps1，"
-                    "或安装 PaddlePaddle 与 paddleocr[doc-parser]。"
+                    "或重新运行 start-windows.bat。"
                 ) from e
             try:
-                paddle.set_flags({"FLAGS_use_mkldnn": bool(self._enable_mkldnn)})
+                paddle.set_flags({"FLAGS_use_mkldnn": False})
             except Exception:
                 # Per-predictor run_mode below also controls oneDNN when a
                 # Paddle build does not expose the global flag API.
                 pass
             self._pipeline = LightweightPipeline(create_pipeline, dict(
                 device=settings.pp_device or 'cpu', engine='paddle',
-                engine_config={'paddle_static': {'run_mode': 'mkldnn' if self._enable_mkldnn else 'paddle',
+                engine_config={'paddle_static': {'run_mode': 'paddle',
                                                 'cpu_threads': threads}},
             ), table_mode)
             self._table_mode = table_mode
@@ -365,7 +361,7 @@ class PPStructureParser:
     def parse(self, file_path: str | Path, table_mode: bool = True) -> ParsedDocument:
         path = Path(file_path)
         settings = load_settings()
-        if settings.mock_mode or path.suffix.lower() in {".txt", ".md"}:
+        if path.suffix.lower() in {".txt", ".md"}:
             text = path.read_text(encoding="utf-8", errors="ignore")
             return ParsedDocument(raw_text=text, tables=[], texts=[TextBlock(page=0, text=text)], parser_json=[])
 

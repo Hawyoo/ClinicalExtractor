@@ -1,3 +1,4 @@
+from clinical_extractor import config
 import json
 
 from bs4 import BeautifulSoup
@@ -6,7 +7,7 @@ from fastapi.testclient import TestClient
 
 def test_theme_and_sort_survive_new_port_without_browser_storage(tmp_path,monkeypatch):
     from clinical_extractor import db,main,preferences,config
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     monkeypatch.setattr(preferences,'PREFERENCES_PATH',tmp_path/'ui_preferences.json')
     monkeypatch.setattr(config,'SETTINGS_PATH',tmp_path/'settings.json')
     with TestClient(main.app,base_url='http://127.0.0.1:18101') as client:

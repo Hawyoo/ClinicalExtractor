@@ -1,3 +1,4 @@
+from clinical_extractor import config
 import json
 import time
 from types import SimpleNamespace
@@ -58,12 +59,12 @@ def test_job_queue_returns_immediately_and_blocks_duplicate(monkeypatch):
 def test_report_ui_shows_patient_type_buttons_and_progress(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from clinical_extractor import main, db
-    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'reports.sqlite3')
     db.init_db()
     with db.connect() as con:
         rid = con.execute('''INSERT INTO reports(patient_id,profile,filename,file_path,created_at,template_id,status)
                              VALUES(?,?,?,?,?,?,?)''',
-                          ('patient-test', '表格式报告', 'sample.png', 'sample.png', db.now_iso(), 'cbc', '已审核')).lastrowid
+                          ('patient-test', '表格式报告', 'sample.png', 'sample.png', db.now_iso(), 'all', '已审核')).lastrowid
     with TestClient(main.app) as client:
         html = client.get(f'/report/{rid}').text
         assert 'patient-test · sample.png' in html

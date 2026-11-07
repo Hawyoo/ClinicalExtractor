@@ -1,11 +1,12 @@
 from __future__ import annotations
 import json
-import base64
 import os
 import shutil
 import threading
 import time
 import uuid
+import asyncio
+import sqlite3
 from datetime import datetime
 from urllib.parse import quote
 from pathlib import Path
@@ -14,7 +15,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSON
 from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from .config import ROOT, DATA_DIR, UPLOAD_DIR, EXPORT_DIR, load_settings, save_settings, Settings, ocr_thread_count
+from . import config
+from .config import ROOT, load_settings, save_settings, Settings, ocr_thread_count
 from .db import init_db, connect, now_iso
 from .service import process_report
 from .jobs import start_job, snapshots, is_busy, total_timer, resume_pending_jobs, report_deletion
@@ -23,25 +25,110 @@ from .report_templates import table_templates, ascii_unit, fill_missing_template
 from .normalizer import chinese_item_name, normalize_record
 from .review import attention_for
 from .result_rules import is_header_name, is_header_record
-from .grounding import ungrounded_legacy_ai
+from .grounding import ungrounded_ai_result
 from .table_extractor import _value_num
-from .transfer import TRANSFER_SUFFIX, create_ocr_transfer, inspect_ocr_transfer, import_ocr_transfer
+from .transfer import TRANSFER_SUFFIX, create_transfer, inspect_transfer, import_transfer
 from .exporter import csv_bytes
 
 app = FastAPI(title="ClinicalExtractor", version="1.0.0")
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
-templates = Jinja2Templates(directory=ROOT / "templates", context_processors=[lambda request:{'ui_preferences':load_preferences()}])
+def shared_context(request):
+    manager = config.PROJECT_MANAGER
+    return {'ui_preferences':load_preferences(),
+            'current_project':manager.active() if manager else None,
+            'projects':manager.state['projects'] if manager else [],
+            'project_management_enabled':manager is not None,
+            'legacy_available':manager.legacy_available() if manager else False}
+
+
+templates = Jinja2Templates(directory=ROOT / "templates", context_processors=[shared_context])
 templates.env.globals['ui_preferences'] = {'theme':None,'report_sort':None}
 templates.env.filters['from_json'] = json.loads
 EXTRACTION_MODES = ["表格式报告", "长文本报告"]
+_project_request_lock = asyncio.Lock()
+
+
+@app.middleware('http')
+async def isolate_project_requests(request: Request, call_next):
+    # Serialize project changes with all in-flight report/upload/export requests.
+    # Background workers are protected separately by project_transition().
+    async with _project_request_lock:
+        manager = config.PROJECT_MANAGER
+        if manager and manager.refresh():
+            config.activate_project(manager.active())
+        expected = request.headers.get('x-clinical-project') or request.query_params.get('project_id')
+        if manager and expected and expected != (manager.state['active_id'] or '__none__'):
+            if not request.headers.get('x-clinical-project') and 'text/html' in request.headers.get('accept', ''):
+                return RedirectResponse('/', status_code=303)
+            return JSONResponse({'detail':'当前项目已切换，请刷新页面后操作'}, status_code=409,
+                                headers={'X-Clinical-Project-Changed':'1'})
+        if manager and not manager.active() and not (request.url.path in
+                {'/', '/health', '/quit', '/settings', '/preferences'} or
+                request.url.path.startswith(('/static/', '/projects/', '/api/preferences'))):
+            if 'application/json' in request.headers.get('accept', '') or request.url.path == '/jobs':
+                return JSONResponse({'detail':'请先创建或打开项目'}, status_code=409)
+            return RedirectResponse('/', status_code=303)
+        return await call_next(request)
 
 @app.on_event("startup")
 def startup():
-    init_db()
-    resume_pending_jobs()
+    if config.PROJECT_MANAGER is not None or (config.PROJECT_DIR is not None and
+            config.DB_PATH == config.PROJECT_DIR / 'clinical_extractor.sqlite3'):
+        config.initialize_projects()
+    if config.PROJECT_MANAGER is None or config.PROJECT_MANAGER.active():
+        init_db()
+        resume_pending_jobs()
+
+
+@app.post('/projects/{action}')
+def change_project(action: str, project_id: str=Form(''), name: str=Form(''), folder: str=Form(''), import_legacy: bool=Form(False)):
+    from .jobs import project_transition
+    manager = config.PROJECT_MANAGER
+    if not manager:
+        return JSONResponse({'detail':'项目管理尚未初始化，请重启程序'}, status_code=409)
+    try:
+        with project_transition() as allowed:
+            if not allowed:
+                return RedirectResponse('/?notice='+quote('当前有排队或处理中的任务，请完成后再切换项目'), status_code=303)
+            if action == 'delete':
+                manager.delete(project_id)
+                config.activate_project(manager.active())
+                return RedirectResponse('/?notice='+quote('项目已删除，文件已移入 DELETE，可恢复'), status_code=303)
+            if action == 'create':
+                entry = manager.create(name, import_legacy=import_legacy)
+            elif action == 'open':
+                entry = manager.open(folder)
+            elif action == 'switch':
+                entry = next((p for p in manager.state['projects'] if p['id'] == project_id), None)
+                if entry is None:
+                    raise ValueError('项目不存在')
+            else:
+                raise ValueError('未知项目操作')
+            previous = manager.active()
+            try:
+                manager.select(entry['id'])
+                config.activate_project(entry)
+                init_db()
+                if action == 'create' and import_legacy:
+                    manager.finish_legacy_import(entry)
+            except Exception:
+                if previous:
+                    manager.select(previous['id'])
+                else:
+                    manager.state['active_id'] = ''
+                    manager._save()
+                config.activate_project(previous)
+                raise
+        resume_pending_jobs()
+        return RedirectResponse('/', status_code=303)
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        return RedirectResponse('/?notice='+quote('项目操作失败：'+str(exc)), status_code=303)
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    if config.PROJECT_MANAGER and not config.PROJECT_MANAGER.active():
+        return templates.TemplateResponse(request=request, name='project_welcome.html',
+                                          context={'notice':request.query_params.get('notice','')})
     with connect() as con:
         reports = con.execute("""SELECT r.*, (SELECT COUNT(*) FROM extractions e WHERE e.report_id=r.id) AS n
             FROM reports r ORDER BY CASE r.status
@@ -65,12 +152,12 @@ async def upload(
         if suffix not in {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".txt", ".md"}:
             continue
         safe = f"{uuid.uuid4().hex[:10]}_{Path(f.filename or 'upload').name}"
-        dest = UPLOAD_DIR / safe
+        dest = config.UPLOAD_DIR / safe
         with dest.open("wb") as out:
             shutil.copyfileobj(f.file, out)
         with connect() as con:
-            con.execute("INSERT INTO reports(patient_id,report_date,report_type,profile,filename,file_path,status,transfer_key,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                        (patient_id, "", "", profiles[index] if index < len(profiles) else "表格式报告",
+            con.execute("INSERT INTO reports(patient_id,report_type,profile,filename,file_path,status,transfer_key,created_at) VALUES(?,?,?,?,?,?,?,?)",
+                        (patient_id, "", profiles[index] if index < len(profiles) else "表格式报告",
                          f.filename or safe, str(dest), "未处理", str(uuid.uuid4()), now_iso()))
             rid = con.execute("SELECT last_insert_rowid()").fetchone()[0]
             mode = profiles[index] if index < len(profiles) else '表格式报告'
@@ -83,9 +170,7 @@ def report_file(report_id: int):
         row = con.execute("SELECT filename,file_path FROM reports WHERE id=?", (report_id,)).fetchone()
     if not row:
         return RedirectResponse("/", status_code=303)
-    path = Path(row["file_path"])
-    if not path.exists():
-        path = UPLOAD_DIR / path.name
+    path = config.UPLOAD_DIR / Path(row['file_path']).name
     return FileResponse(path, filename=row["filename"])
 
 @app.post("/report/{report_id}/delete")
@@ -99,17 +184,13 @@ def delete_report(report_id: int, request: Request):
     if row:
         # Delete only the application's uploaded copy, including after moving
         # a data directory from another machine.
-        path = UPLOAD_DIR / Path(row["file_path"]).name
+        path = config.UPLOAD_DIR / Path(row["file_path"]).name
         try: path.unlink(missing_ok=True)
         except Exception: pass
     if 'application/json' in request.headers.get('accept',''):
         return JSONResponse({'deleted':True,'report_id':report_id})
     return RedirectResponse("/", status_code=303)
 
-@app.post("/report/{report_id}/process")
-def process(report_id: int):
-    start_job(report_id, 'full')
-    return RedirectResponse(f"/report/{report_id}", status_code=303)
 
 @app.post("/report/{report_id}/ocr")
 def process_ocr(report_id: int, request: Request):
@@ -144,8 +225,6 @@ def ollama_available():
     """Check the configured local model once before submitting a batch."""
     import requests
     settings = load_settings()
-    if settings.mock_mode:
-        return True
     try:
         response = requests.get(settings.ollama_url.rstrip('/')+'/api/tags', timeout=2)
         response.raise_for_status()
@@ -156,21 +235,7 @@ def ollama_available():
     except (requests.RequestException,ValueError,TypeError,AttributeError):
         return False
 
-@app.post("/ocr-pending")
-def ocr_pending():
-    with connect() as con:
-        ids = [r[0] for r in con.execute("SELECT id FROM reports WHERE status IN ('未处理','失败') ORDER BY id").fetchall()]
-    for rid in ids:
-        start_job(rid, 'ocr')
-    return RedirectResponse("/", status_code=303)
 
-@app.post('/llm-pending')
-def llm_pending():
-    with connect() as con:
-        ids = [r[0] for r in con.execute("SELECT id FROM reports WHERE raw_text<>'' AND status IN ('OCR已完成','失败') ORDER BY id").fetchall()]
-    for rid in ids:
-        start_job(rid, 'llm')
-    return RedirectResponse('/', status_code=303)
 
 @app.get('/jobs')
 def job_progress():
@@ -190,39 +255,39 @@ def job_progress():
                               'running':any(j['report_id']==row['id'] and j['state']=='running' for j in jobs)}
                              for row in reports.values()]}
 
-@app.get("/transfer/export-ocr")
+@app.get("/transfer/export")
 def export_ocr_transfer():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = EXPORT_DIR / f"clinical-extractor-ocr-{stamp}{TRANSFER_SUFFIX}"
+    path = config.EXPORT_DIR / f"clinical-extractor-ocr-{stamp}{TRANSFER_SUFFIX}"
     try:
-        create_ocr_transfer(path)
+        create_transfer(path)
     except ValueError as exc:
         return RedirectResponse(f"/?notice={quote(str(exc))}", status_code=303)
     return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
-@app.post("/transfer/import-ocr")
-async def import_ocr_transfer_file(package: UploadFile = File(...)):
+@app.post("/transfer/import")
+async def import_transfer_file(package: UploadFile = File(...)):
     if not (package.filename or "").lower().endswith(TRANSFER_SUFFIX):
         return RedirectResponse(f"/?notice={quote('请选择 ClinicalExtractor OCR 数据包（.ceocr）')}", status_code=303)
-    staging_dir = DATA_DIR / "transfer-staging"
+    staging_dir = config.PROJECT_DIR / "transfer-staging"
     staging_dir.mkdir(parents=True, exist_ok=True)
     token = uuid.uuid4().hex
     temporary = staging_dir / f"{token}{TRANSFER_SUFFIX}"
     try:
         with temporary.open("wb") as output:
             shutil.copyfileobj(package.file, output)
-        inspect_ocr_transfer(temporary)
+        inspect_transfer(temporary)
         return RedirectResponse(f"/transfer/resolve/{token}", status_code=303)
     except Exception as exc:
         return RedirectResponse(f"/?notice={quote(f'导入失败：{str(exc)}')}", status_code=303)
 
 @app.get("/transfer/resolve/{token}", response_class=HTMLResponse)
 def resolve_ocr_transfer(request: Request, token: str):
-    package = DATA_DIR / "transfer-staging" / f"{token}{TRANSFER_SUFFIX}"
+    package = config.PROJECT_DIR / "transfer-staging" / f"{token}{TRANSFER_SUFFIX}"
     if not package.exists():
         return RedirectResponse(f"/?notice={quote('OCR 数据包已过期，请重新选择文件')}", status_code=303)
     try:
-        preview = inspect_ocr_transfer(package)
+        preview = inspect_transfer(package)
     except Exception as exc:
         package.unlink(missing_ok=True)
         return RedirectResponse(f"/?notice={quote(f'无法读取 OCR 数据包：{str(exc)}')}", status_code=303)
@@ -230,11 +295,11 @@ def resolve_ocr_transfer(request: Request, token: str):
 
 @app.post("/transfer/resolve/{token}")
 def confirm_ocr_transfer(token: str, replace_keys: list[str] = Form([])):
-    package = DATA_DIR / "transfer-staging" / f"{token}{TRANSFER_SUFFIX}"
+    package = config.PROJECT_DIR / "transfer-staging" / f"{token}{TRANSFER_SUFFIX}"
     if not package.exists():
         return RedirectResponse(f"/?notice={quote('OCR 数据包已过期，请重新选择文件')}", status_code=303)
     try:
-        result = import_ocr_transfer(package, set(replace_keys))
+        result = import_transfer(package, set(replace_keys))
         notice = f"导入完成：新增 {result.imported} 份，覆盖更新 {result.replaced} 份，保留原有 {result.skipped} 份"
         return RedirectResponse(f"/?notice={quote(notice)}", status_code=303)
     except Exception as exc:
@@ -247,31 +312,76 @@ def report_view(request: Request, report_id: int):
     with connect() as con:
         report = con.execute("SELECT * FROM reports WHERE id=?", (report_id,)).fetchone()
         items = con.execute("SELECT * FROM extractions WHERE report_id=? ORDER BY sort_order,id", (report_id,)).fetchall()
-    items = [dict(item) for item in items if not is_header_record(dict(item)) and not ungrounded_legacy_ai({**dict(item),'profile':report['profile']})]
+    items = [dict(item) for item in items if not is_header_record(dict(item)) and not ungrounded_ai_result({**dict(item),'profile':report['profile']})]
     catalog = table_templates()
+    has_headerless_rows = False
     for item in items:
         refresh_reference_warning(item, report['template_id'], catalog)
         fill_missing_template_unit(item, report['template_id'], catalog)
         item['display_name'] = chinese_item_name(item, catalog)
         item['unit'] = ascii_unit(item['unit'])
         item['attention'] = attention_for(item)
+        try:
+            payload = item.get('payload_json') or {}
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            if isinstance(payload, dict) and payload.get('headerless_recovery'):
+                has_headerless_rows = True
+        except (TypeError, ValueError):
+            pass
     attention_items = sorted((item for item in items if item['attention']['visible']),
                              key=lambda item:(item['attention']['priority'], bool(item['reviewed'])))
     try:
-        from .ocr_row_repair import saved_assignment_warnings
+        from .row_validation import saved_assignment_warnings
         row_warnings = []
         if not report['ocr_text_edited']:
             for page in json.loads(report['parser_json'] or '[]'):
                 page_items = [item for item in items if item['page']==page.get('page_index') and item['source_kind']=='table']
                 current = page_items if any(item['attention']['pairing'] for item in page_items) else None
-                row_warnings.extend(w['message'] for w in saved_assignment_warnings(page,current))
+                row_warnings.extend(w['message'] for w in saved_assignment_warnings(page,current)
+                                    if w.get('kind') != 'verification_unavailable' and
+                                    w.get('message') != '本页未能独立定位结果列，无法完成数量核验；这不代表结果重复，请核对原图。')
     except (TypeError,ValueError,KeyError):
         row_warnings = []
     return templates.TemplateResponse(
         request=request,
         name="report.html",
-        context={"report": report, "items": items, "attention_items": attention_items, "table_templates": table_templates(), "row_warnings": row_warnings},
+        context={"report": report, "items": items, "attention_items": attention_items, "table_templates": table_templates(), "row_warnings": row_warnings, "has_headerless_rows": has_headerless_rows},
     )
+
+@app.get('/templates/catalog')
+def template_catalog():
+    from .template_editor import catalog_data
+    return JSONResponse(catalog_data(), headers={'Cache-Control':'no-store'})
+
+
+@app.post('/templates/items')
+def save_template_item(target_code: str=Form(''), display_name: str=Form(...), aliases: str=Form(''),
+                       abbreviation: str=Form(...), reference_ranges: str=Form(''),
+                       unit: str=Form(''), alternative_units: str=Form(''), section: str=Form(...),
+                       expected_revision: str=Form(...)):
+    from .template_editor import save_item
+    try:
+        return JSONResponse(save_item(target_code=target_code, display_name=display_name, aliases=aliases,
+                                      abbreviation=abbreviation,
+                                      reference_ranges=reference_ranges, unit=unit,
+                                      alternative_units=alternative_units, section=section,
+                                      expected_revision=expected_revision))
+    except ValueError as exc:
+        return JSONResponse({'detail':str(exc)}, status_code=422)
+    except OSError:
+        return JSONResponse({'detail':'模板保存失败，请检查数据目录是否可写，原模板未被删除'},status_code=500)
+
+
+@app.post('/templates/sections')
+def create_template_section(section: str=Form(...), expected_revision: str=Form(...)):
+    from .template_editor import save_section
+    try:
+        return JSONResponse(save_section(section, expected_revision))
+    except ValueError as exc:
+        return JSONResponse({'detail':str(exc)}, status_code=422)
+    except OSError:
+        return JSONResponse({'detail':'分类保存失败，请检查数据目录是否可写'}, status_code=500)
 
 @app.post('/report/{report_id}/ocr-text')
 def edit_ocr_text(request: Request, report_id: int, text: str=Form(''), action: str=Form('save')):
@@ -351,7 +461,7 @@ def add_extraction(request: Request, report_id: int, item_name: str=Form(...), v
 @app.post("/report/{report_id}/metadata")
 def metadata(report_id: int, patient_id: str=Form(""), report_type: str=Form("未分类"), profile: str=Form("generic")):
     with connect() as con:
-        con.execute("UPDATE reports SET patient_id=?,report_date='',report_type=?,profile=? WHERE id=?", (patient_id,report_type,profile,report_id))
+        con.execute("UPDATE reports SET patient_id=?,report_type=?,profile=? WHERE id=?", (patient_id,report_type,profile,report_id))
         con.execute('UPDATE reports SET template_id=? WHERE id=?', (ALL_TEMPLATE_ID if profile=='表格式报告' else '',report_id))
     return RedirectResponse(f"/report/{report_id}", status_code=303)
 
@@ -433,26 +543,24 @@ def preferences_save(theme: str | None=Form(None), report_sort: str | None=Form(
         return JSONResponse({'detail':str(exc)},status_code=422)
 
 @app.post("/settings")
-def settings_save(ollama_url: str=Form(...), ollama_model: str=Form(...), pp_device: str=Form("cpu"), max_text_chars: int=Form(12000), mock_mode: str=Form("0"), ocr_cpu_threads: int=Form(0,ge=0,le=256)):
+def settings_save(ollama_url: str=Form(...), ollama_model: str=Form(...), pp_device: str=Form("cpu"), max_text_chars: int=Form(12000), ocr_cpu_threads: int=Form(0,ge=0,le=256)):
     s = load_settings()
     s.ocr_cpu_threads = ocr_cpu_threads
-    s.ollama_url=ollama_url; s.ollama_model=ollama_model; s.pp_device=pp_device; s.max_text_chars=max_text_chars; s.mock_mode=(mock_mode=="1")
+    s.ollama_url=ollama_url; s.ollama_model=ollama_model; s.pp_device=pp_device; s.max_text_chars=max_text_chars
     save_settings(s)
     return RedirectResponse("/settings", status_code=303)
 
 @app.get("/export/csv")
-def download_csv(reviewed_only: int=0):
-    return Response(csv_bytes(bool(reviewed_only)), media_type='text/csv',
-                    headers={'Content-Disposition':'attachment; filename="clinical_extractor.csv"',
+def download_csv():
+    stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    return Response(csv_bytes(), media_type='text/csv',
+                    headers={'Content-Disposition':f'attachment; filename="clinical_extractor-{stamp}.csv"',
                              'Cache-Control':'no-store'})
 
-@app.get("/export/xlsx")
-def download_xlsx(reviewed_only: int=0):
-    return RedirectResponse('/export/csv', status_code=303)
 
 @app.get("/health")
 def health():
-    s=load_settings(); return {"ok": True, "model": s.ollama_model, "mock_mode": s.mock_mode}
+    s=load_settings(); return {"ok": True, "model": s.ollama_model}
 
 def _exit_after_response():
     time.sleep(1.5)
@@ -463,23 +571,11 @@ def _exit_after_response():
         process.terminate()
     os._exit(0)
 
-@app.post("/quit", response_class=HTMLResponse)
-def quit_application(request: Request, format: str = ''):
-    # The delay lets the browser receive this response before its local server
-    # exits. The Portable launcher observes the process and closes with it.
-    # The background callback starts only after the full response is sent.
-    # Fetch mode mirrors BCE: it keeps the original page/history and icon.
-    if format == 'json' or 'application/json' in request.headers.get('accept', '').lower():
-        return JSONResponse({'status': 'shutting_down'}, headers={'Cache-Control':'no-store'},
-                            background=BackgroundTask(_exit_after_response))
-    # Embed the icon so the browser need not fetch it after the service stops.
-    favicon = base64.b64encode((ROOT / "static" / "clinical-extractor.ico").read_bytes()).decode("ascii")
-    response = templates.TemplateResponse(
-        request=request, name="quit.html", context={"favicon": favicon},
-        headers={"Cache-Control": "no-store"},
-    )
-    response.background = BackgroundTask(_exit_after_response)
-    return response
+@app.post('/quit')
+def quit_application():
+    return JSONResponse({'status':'shutting_down'}, headers={'Cache-Control':'no-store'},
+                        background=BackgroundTask(_exit_after_response))
+
 
 def run():
     import uvicorn

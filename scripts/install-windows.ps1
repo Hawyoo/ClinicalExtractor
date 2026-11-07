@@ -30,10 +30,10 @@ if (Test-Path $python) {
     Invoke-Checked { uv venv --seed --python 3.12 .venv } "Virtual-environment creation"
 }
 
-Invoke-Checked { uv pip install --python $python -e ".[ocr,dev]" } "Dependency installation"
+Invoke-Checked { uv pip install --python $python -e ".[ocr]" } "Dependency installation"
 
 Invoke-Checked { & $python -c "import paddle; print('PaddlePaddle', paddle.__version__); paddle.utils.run_check()" } "PaddlePaddle verification"
-Invoke-Checked { & $python -c "from paddleocr import PPStructureV3; print('PP-StructureV3 import OK')" } "PP-StructureV3 verification"
+Invoke-Checked { & $python -c "from paddlex import create_pipeline; print('OCR pipeline import OK')" } "OCR pipeline verification"
 
 Write-Host "Installation complete. Pull an Ollama model, then run start-windows.bat." -ForegroundColor Green
 Write-Host "Example: ollama pull qwen3:8b"

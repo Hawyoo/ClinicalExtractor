@@ -10,7 +10,7 @@ from .validator import validate_record
 from .report_templates import apply_table_template, ALL_TEMPLATE_ID
 from .jobs import emit
 from .result_rules import is_header_record
-from .grounding import ungrounded_legacy_ai
+from .grounding import ungrounded_ai_result
 
 PARSER = OCR_PARSER
 
@@ -20,7 +20,7 @@ def _store_extractions(con, report_id: int, records: list[dict]) -> int:
     con.execute("DELETE FROM extractions WHERE report_id=? AND source_kind<>'manual'", (report_id,))
     ordered=[]
     for r in records:
-        if is_header_record(r) or ungrounded_legacy_ai(r):
+        if is_header_record(r) or ungrounded_ai_result(r):
             continue
         if str(r.get('item_standard','')).casefold() in manual_codes:
             continue
@@ -47,27 +47,17 @@ def _store_extractions(con, report_id: int, records: list[dict]) -> int:
     return len(ordered)
 
 
-def _page_texts(parsed) -> list[tuple[int | None, str]]:
-    pages: dict[int | None, list[str]] = {}
-    for block in parsed.texts:
-        if block.label in {"page_header", "page_footer", "header", "footer"}:
-            continue
-        if len(block.text.strip()) >= 4:
-            pages.setdefault(block.page, []).append(block.text.strip())
-    return [(page, "\n".join(parts).strip()) for page, parts in pages.items()]
-
-
-def _text_records(page_texts: list[tuple[int | None, str]], template_id: str = '') -> list[dict]:
+def _text_records(page_texts: list[tuple[int | None, str]]) -> list[dict]:
     records: list[dict] = []
     for page, merged in page_texts:
         if len(merged) >= 8:
             emit(f'AI 正在抽取第 {page + 1 if page is not None else 1} 页文本（{len(merged)} 字符）')
-            records.extend(extract_text(merged, "generic", page, template_id=template_id))
+            records.extend(extract_text(merged, page=page))
     return records
 
 
-def process_report(report_id: int, stage: str = "full"):
-    """Run a full report, OCR only, or deferred long-text extraction.
+def process_report(report_id: int, stage: str = "ocr"):
+    """Run the OCR stage or deferred AI stage.
 
     OCR-only mode deliberately stores all OCR output in SQLite.  Therefore a
     portable application's data directory can be copied to another computer
@@ -116,7 +106,7 @@ def process_report(report_id: int, stage: str = "full"):
                     records = repair_pairings(records, json.loads(report['parser_json'] or '[]'), report['template_id'])
                 records = correct_names(records,report['template_id'])
             else:
-                records = _text_records([(None, report["raw_text"])], report['template_id'])
+                records = _text_records([(None, report["raw_text"])])
             if not records:
                 raise ValueError('未找到带有可验证原文结果的指标，未写入 AI 数据。只有项目名时不能补出数值。')
             records = [normalize_record(r) for r in records]
@@ -128,12 +118,10 @@ def process_report(report_id: int, stage: str = "full"):
                 con.execute("UPDATE reports SET status='待审核', error='' WHERE id=?", (report_id,))
             return count
 
-        if stage not in {"full", "ocr"}:
+        if stage != "ocr":
             raise ValueError("未知处理阶段")
         from .config import UPLOAD_DIR
-        path = Path(report['file_path'])
-        if not path.is_file():
-            path = UPLOAD_DIR / path.name
+        path = UPLOAD_DIR / Path(report['file_path']).name
         parsed = PARSER.parse(path, table_mode=(mode == '表格式报告'))
         emit(f'OCR 完成：{len(parsed.raw_text)} 字符、{len(parsed.tables)} 个表格')
         records: list[dict] = []
@@ -141,15 +129,13 @@ def process_report(report_id: int, stage: str = "full"):
             emit('正在匹配表格项目与所选模板')
             for table in parsed.tables:
                 records.extend(extract_table_rows(table))
-        if stage == "full" and mode == "长文本报告":
-            records.extend(_text_records(_page_texts(parsed)))
         records = [normalize_record(r) for r in records]
         if mode == "表格式报告":
             records = apply_table_template(records, report["template_id"])
         with connect() as con:
             emit('正在保存 OCR 与结构化结果')
             count=_store_extractions(con, report_id, records)
-            status = "OCR已完成" if stage == "ocr" else "待审核"
+            status = "OCR已完成"
             if report['ocr_text_edited']:
                 from .db import now_iso
                 con.execute('INSERT INTO ocr_text_revisions(report_id,previous_text,new_text,created_at) VALUES(?,?,?,?)',

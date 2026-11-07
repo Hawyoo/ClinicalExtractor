@@ -1,8 +1,8 @@
 # Third-party components
 
-ClinicalExtractor integrates independent open-source projects installed by the user at runtime.
+ClinicalExtractor integrates independent open-source projects used for OCR, extraction and the local interface.
 
-- PaddleOCR / PP-StructureV3 — Apache License 2.0
+- PaddlePaddle / PaddleX / PP-OCRv5 / SLANet_plus — Apache License 2.0
 - LangExtract — Apache License 2.0
 - FastAPI — MIT License
 - Uvicorn — BSD License

@@ -1,14 +1,13 @@
 id: all
 name: 表格式报告
 version: 2
-legacy_ids: [cbc, liver_kidney]
 coverage: partial
 reference_policy: 参考范围仅辅助项目匹配；保留报告原范围，不作为通用正常阈值
 missing_policy: 只匹配当前图片实际出现的指标，不补项目或结果；存在多个候选时保留核对提示
 # 以下分组仅方便维护和查找，表示常见检查类别；不限制自动匹配范围。
 items:
 
-  # ==================== 血常规 / Complete blood count ====================
+  # ==================== 血常规 ====================
   - {code: WBC, name: 白细胞计数, aliases: [白细胞, WBC], expected_unit: 10^9/L, reference_range: '3.50-9.50', display_name: "白细胞计数"}
   - {code: RBC, name: 红细胞计数, aliases: [红细胞, RBC], expected_unit: 10^12/L, reference_range: '4.30-5.80', alternative_reference_ranges: ['3.80-5.10'], display_name: "红细胞计数"}
   - {code: HGB, name: 血红蛋白浓度, aliases: [血红蛋白, HGB, Hb], expected_unit: g/L, reference_range: '130-175', alternative_reference_ranges: ['115-150'], display_name: "血红蛋白浓度"}
@@ -34,7 +33,7 @@ items:
   - {code: RDW-CV, name: 红细胞体积分布宽度CV, aliases: [RDW-CV, 红细胞分布宽度CV, 红细胞分布宽度变异系数], expected_unit: '%', reference_range: '11.9-15.0', display_name: "红细胞体积分布宽度CV"}
   - {code: RDW-SD, name: 红细胞体积分布宽度SD, aliases: [RDW-SD, 红细胞分布宽度SD, 红细胞分布宽度标准差], expected_unit: fL, reference_range: '39-53.6', display_name: "红细胞体积分布宽度SD"}
 
-  # ==================== 肝功能及蛋白 / Liver function and proteins ====================
+  # ==================== 肝功能 ====================
   - {code: TBIL, name: 总胆红素, aliases: [总胆红素测定, T-BIL, TB], expected_unit: 'umol/L', alternative_units: [umol/L, umol/L], reference_range: '<23', display_name: "总胆红素"}
   - {code: DBIL, name: 直接胆红素, aliases: [直接胆红素(贝克曼), D-BIL, DB], expected_unit: 'umol/L', alternative_units: [umol/l, umol/L], reference_range: '<4', alternative_reference_ranges: ['<8'], display_name: "直接胆红素"}
   - {code: IBIL, name: 间接胆红素, aliases: [间接胆红素(贝克曼), I-BIL, IB], expected_unit: 'umol/L', alternative_units: [umol/l, umol/L], reference_range: '<19', alternative_reference_ranges: ['<15'], display_name: "间接胆红素"}
@@ -43,7 +42,7 @@ items:
   - {code: TP, name: 总蛋白, aliases: [血清总蛋白], expected_unit: g/L, reference_range: '60-85', display_name: "总蛋白"}
   - {code: ALB, name: 白蛋白, aliases: [血清白蛋白, Alb], expected_unit: g/L, reference_range: '35-55', display_name: "白蛋白"}
   - {code: GLB, name: 球蛋白, aliases: [血清球蛋白, GLOB], expected_unit: g/L, reference_range: '20-40', display_name: "球蛋白"}
-  - {code: A/G, name: 白蛋白/球蛋白比值, aliases: [白球, 白/球比值, 白球比, 白球比值, 白球比例], expected_unit: '', reference_range: '1.2-2.4', unitless: true, display_name: "白/球比值"}
+  - {code: A/G, name: 白蛋白/球蛋白比值, aliases: [白球, 白/球, 白／球, 白/球比值, 白球比, 白球比值, 白球比例], expected_unit: '', reference_range: '1.2-2.4', unitless: true, display_name: "白/球比值"}
   - {code: ALP, name: 碱性磷酸酶, aliases: [AKP], expected_unit: IU/L, alternative_units: [U/L], reference_range: '35-135', alternative_reference_ranges: ['45-125'], display_name: "碱性磷酸酶"}
   - {code: GGT, name: γ-谷氨酰基转移酶, aliases: [谷酰转移酶, 谷氨酰转移酶, 谷酰转肽酶, 谷氨酰转肽酶, γ-谷氨酰转肽酶, r-谷氨酰转肽酶, G-GT, R-GT], expected_unit: U/L, alternative_units: [IU/L], reference_range: '7-45', alternative_reference_ranges: ['10-60'], display_name: "谷酰转肽酶"}
   - {code: TBA, name: 总胆汁酸, aliases: [胆汁酸], expected_unit: 'umol/L', alternative_units: [umol/L, umol/L], reference_range: '0.5-20', display_name: "总胆汁酸"}
@@ -52,16 +51,16 @@ items:
   - {code: CHE, name: 胆碱酯酶, aliases: [ChE], expected_unit: U/L, reference_range: '5000-12000', display_name: "胆碱酯酶"}
   - {code: GR, name: 谷胱甘肽还原酶, aliases: [GSR], expected_unit: U/L, reference_range: '33-73', display_name: "谷胱甘肽还原酶"}
 
-  # ==================== 肾功能 / Renal function ====================
+  # ==================== 肾功能 ====================
   - {code: UREA, name: 尿素, aliases: [血尿素, Urea], expected_unit: mmol/L, reference_range: '2.6-8.8', alternative_reference_ranges: ['3.1-9.5'], display_name: "尿素"}
-  - {code: BUN, name: 尿素氮, aliases: [血尿素氮, 尿素氮测定], expected_unit: mmol/L, reference_range: '3.1-9.5', display_name: "尿素氮"}
+  - {code: BUN, name: 尿素氮, aliases: [血尿素氮, 尿素氮测定], expected_unit: mmol/L, reference_range: '3.1-9.5', alternative_reference_ranges: ['2.6-8.8'], display_name: "尿素氮"}
   - {code: CREA, name: 血肌酐, aliases: [肌酐, 血清肌酐, Cr, SCr], expected_unit: 'umol/L', alternative_units: [umol/L, umol/L], reference_range: '41-81', alternative_reference_ranges: ['57-111'], display_name: "血肌酐"}
-  - {code: eGFR, name: eGFR, aliases: ["eGFR(eGFR)", 估算肾小球滤过率, 肾小球滤过率估算值], excluded_name_terms: [EPI], expected_unit: 'mL/min/1.73m²', alternative_units: ['mL/min/1.73m2'], reference_range: '>90', display_name: "eGFR"}
-  - {code: eGFR-EPI, name: eGFR-EPI, aliases: ["eGFR-EPI(eGFR-EPI)", "估算肾小球滤过率（EPI）", "肾小球滤过率估算值（EPI）"], required_name_terms: [EPI], expected_unit: 'mL/min/1.73m²', alternative_units: ['mL/min/1.73m2'], reference_range: '>90', display_name: "eGFR-EPI"}
+  - {code: eGFR, name: eGFR, aliases: ["eGFR(eGFR)", 估算肾小球滤过率, 肾小球滤过率估算值], excluded_name_terms: [EPI], expected_unit: 'mL/min/1.73m^2', reference_range: '>90', display_name: "eGFR"}
+  - {code: eGFR-EPI, name: eGFR-EPI, aliases: ["eGFR-EPI(eGFR-EPI)", "估算肾小球滤过率（EPI）", "肾小球滤过率估算值（EPI）"], required_name_terms: [EPI], expected_unit: 'mL/min/1.73m^2', reference_range: '>90', display_name: "eGFR-EPI"}
   - {code: UA, name: 尿酸, aliases: [血尿酸, URIC], expected_unit: 'umol/L', alternative_units: [umol/L, umol/L], reference_range: '155-357', alternative_reference_ranges: ['208-428'], display_name: "尿酸"}
   - {code: CysC, name: 胱抑素C, aliases: [胱抑素c, CYS-C, Cys-C], expected_unit: mg/L, reference_range: '0.50-1.03', display_name: "胱抑素C"}
 
-  # ==================== 电解质及酸碱 / Electrolytes and acid-base ====================
+  # ==================== 电解质 ====================
   - {code: Na, name: 钠, aliases: [血钠, 血清钠], expected_unit: mmol/L, reference_range: '137-147', display_name: "钠"}
   - {code: K, name: 钾, aliases: [血钾, 血清钾], expected_unit: mmol/L, reference_range: '3.5-5.3', display_name: "钾"}
   - {code: Cl, name: 氯, aliases: [血氯, 血清氯], expected_unit: mmol/L, reference_range: '99-110', display_name: "氯"}
@@ -70,7 +69,7 @@ items:
   - {code: Ca, name: 钙, aliases: [血钙, 血清钙], expected_unit: mmol/L, reference_range: '2.11-2.52', display_name: "钙"}
   - {code: P, name: 磷, aliases: [无机磷, 血磷, IP], expected_unit: mmol/L, reference_range: '0.85-1.51', display_name: "磷"}
 
-  # ==================== 血脂 / Lipids ====================
+  # ==================== 血脂 ====================
   - {code: TC, name: 总胆固醇, aliases: [CHOL, TCHO], expected_unit: mmol/L, reference_range: '2.8-5.2', display_name: "总胆固醇"}
   - {code: TG, name: 甘油三酯, aliases: [TRIG], expected_unit: mmol/L, reference_range: '0.56-1.7', display_name: "甘油三酯"}
   - {code: HDL-C, name: 高密度脂蛋白胆固醇, aliases: [高密度脂蛋白, HDL, 高密度胆固醇, HDLC], expected_unit: mmol/L, reference_range: '1.04-1.55', display_name: "高密度脂蛋白"}
@@ -80,18 +79,18 @@ items:
   - {code: ApoB, name: 载脂蛋白B, aliases: [APOB], expected_unit: g/L, reference_range: '0.60-1.10', display_name: "载脂蛋白B"}
   - {code: Lp(a), name: 脂蛋白a, aliases: [脂蛋白(a), 脂蛋白（a）, LPA], expected_unit: mg/dL, reference_range: '3.4-30.0', display_name: "脂蛋白a"}
 
-  # ==================== 血糖相关 / Glucose-related tests ====================
+  # ==================== 血糖 ====================
   - {code: FBG, name: 空腹血糖, aliases: [空腹葡萄糖, FPG, GLU], expected_unit: mmol/L, reference_range: '3.9-6.1', display_name: "空腹血糖"}
   - {code: GA, name: 糖化白蛋白, aliases: [糖化清蛋白, 糖化白蛋白百分比, GA-L], expected_unit: '%', reference_range: '11-16', display_name: "糖化白蛋白"}
 
-  # ==================== 心肌酶及缺血相关 / Cardiac enzymes and ischemia-related tests ====================
+  # ==================== 心肌酶 ====================
   - {code: LDH, name: 乳酸脱氢酶, aliases: [LD], expected_unit: IU/L, alternative_units: [U/L], reference_range: '120-250', display_name: "乳酸脱氢酶"}
   - {code: CK, name: 磷酸肌酸激酶, aliases: [肌酸激酶, 肌酸磷酸激酶, CPK], expected_unit: U/L, reference_range: '40-200', alternative_reference_ranges: ['50-310'], display_name: "磷酸肌酸激酶"}
   - {code: CK-ISO, name: 磷酸肌酸激酶同工酶, aliases: [肌酸激酶同工酶, 肌酸磷酸激酶同工酶], expected_unit: U/L, reference_range: '2-30', abbreviation: '', note: 原表未写同工酶亚型，不自动认作CK-MB；CK-ISO仅作内部标识, display_name: "磷酸肌酸激酶同工酶"}
   - {code: HBDH, name: 羟丁酸脱氢酶, aliases: [α-羟丁酸脱氢酶, a-HBDH], expected_unit: IU/L, alternative_units: [U/L], reference_range: '26-195', display_name: "羟丁酸脱氢酶"}
   - {code: IMA, name: 缺血修饰性白蛋白, aliases: [缺血修饰白蛋白], expected_unit: U/mL, reference_range: '<79.6', display_name: "缺血修饰性白蛋白"}
 
-  # ==================== 其他生化及补体 / Other biochemistry and complement ====================
+  # ==================== 生化 ====================
   - {code: C1q, name: 补体C1q, aliases: [补体C1Q, C1Q], expected_unit: mg/dL, reference_range: '15.7-23.7', display_name: "补体C1q"}
   - {code: HCY, name: 同型半胱氨酸, aliases: [Hcy, 总同型半胱氨酸], expected_unit: umol/L, alternative_units: ['umol/L', 'umol/L'], reference_range: '4-15.4', display_name: "同型半胱氨酸"}
   - {code: 'NO', name: 一氧化氮, aliases: [一氧化氮测定], expected_unit: 'umol/L', alternative_units: [umol/L, umol/L], reference_range: '30-60', display_name: "一氧化氮"}

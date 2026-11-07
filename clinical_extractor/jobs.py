@@ -16,6 +16,18 @@ _jobs = {}
 _batch_timer = {'started': None, 'ended': None}
 
 
+@contextmanager
+def project_transition():
+    """A project cannot change while either queue can still write data."""
+    with _lock:
+        if _has_pending_work():
+            yield False
+            return
+        yield True
+        _jobs.clear()
+        _batch_timer.update(started=None, ended=None)
+
+
 def _has_pending_work():
     return any(j['state'] in {'queued','running'} or j.get('_handoff_pending')
                or j['ended'] is None for j in _jobs.values())
@@ -56,8 +68,6 @@ def resume_pending_jobs():
 
 
 def start_job(report_id, stage, then_ai=False):
-    if stage == 'full':
-        return start_job(report_id, 'ocr', then_ai=True)
     if stage not in _executors:
         raise ValueError('未知处理阶段')
     with _lock:

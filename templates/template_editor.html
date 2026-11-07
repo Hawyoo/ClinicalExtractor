@@ -1,0 +1,16 @@
+<details class="template-editor" id="template-editor">
+<summary>新增 / 修改检验模板</summary>
+<p class="muted">模板为所有项目共用。保存不会改写报告数值或重置审核状态；当前页面未保存的审核内容也会保留。</p>
+<div class="template-picker"><label>选择指标<select id="template-item-select"><option value="">新增指标</option></select></label><button type="button" class="secondary" id="reload-template-catalog">重新加载模板</button></div>
+<form id="template-item-form" action="/templates/items" method="post" class="template-editor-grid">
+<input type="hidden" name="target_code"><input type="hidden" name="expected_revision">
+<label>项目名称（展示名称）<input name="display_name" required maxlength="120"></label>
+<div class="template-section-field"><label for="template-section-select">所属分区</label><div class="template-section-controls"><select name="section" id="template-section-select" required></select><button type="button" class="secondary template-inline-button" id="new-template-section">新建分类</button></div><div id="new-template-section-fields" class="new-template-section" hidden><input id="new-template-section-name" maxlength="80" placeholder="输入新分类名称" aria-label="新分类名称"><button type="button" id="save-template-section">添加</button><button type="button" class="secondary" id="cancel-template-section">取消</button></div></div>
+<label>英文缩写（CSV 导出使用）<input name="abbreviation" required maxlength="40" placeholder="例如 CysC"></label>
+<label>项目兼容名称（中英文均可，每行一个）<textarea name="aliases" rows="4"></textarea></label>
+<label>参考范围（每行一个，首行为主要范围）<textarea name="reference_ranges" rows="4" placeholder="0.50-1.03&#10;0.60-1.10"></textarea></label>
+<label>指标单位（无单位可留空）<input name="unit" placeholder="例如 mg/L、10^9/L"></label>
+<label>兼容单位（每行一个，可选）<textarea name="alternative_units" rows="2"></textarea></label>
+<div class="template-editor-footer"><button type="submit" disabled>保存模板</button><span id="template-save-feedback" class="muted" role="status" aria-live="polite"></span></div>
+</form></details>
+<script src="/static/template-editor.js?v=20261106-selector-only" defer></script>

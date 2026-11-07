@@ -34,45 +34,6 @@ def reference_fits_row(token, anchor, items, gap, definition):
     return same_row_token(anchor,[token],items,gap) is not None
 
 
-def restore_invalid_pairing(record, pages):
-    """Recover an unreviewed AI change only when its own audit and pixels agree.
-
-    Never overwrite reviewed results or subsequent manual edits. The rejected
-    assignment remains in the payload for traceability.
-    """
-    row=deepcopy(record)
-    payload=row.get('payload_json') or {}
-    if isinstance(payload,str):payload=json.loads(payload)
-    audit=payload.get('ai_pairing')
-    if row.get('reviewed') or not isinstance(audit,dict):return None
-    before,after=audit.get('before',{}),audit.get('after',{})
-    if (str(row.get('value',''))!=str(after.get('value','')) or
-            str(payload.get('reference_raw',''))!=str(after.get('reference',''))):return None
-    source=audit.get('value_source') or {}
-    for page in pages:
-        if row.get('page') not in (page.get('page_index'),None):continue
-        items,values,_=sources(page)
-        anchors=[t for t in items if _key(_name_parts(t['text'])[0])==_key(_name_parts(row.get('item_original',''))[0])]
-        if len(anchors)!=1:continue
-        centers=sorted(t['y'] for t in items)
-        gaps=[b-a for a,b in zip(centers,centers[1:]) if b>a]
-        if not gaps:continue
-        reliable=same_row_token(anchors[0],values,items,median(gaps))
-        claimed=[v for v in values if v['id']==source.get('id') and v['box']==source.get('box') and v['text']==source.get('text')]
-        if (reliable is None or not claimed or reliable['id']==claimed[0]['id']
-                or reliable['text']!=str(before.get('value',''))):continue
-        row['value']=reliable['text'];row['value_num']=_value_num(row['value'])
-        ref=str(before.get('reference',''))
-        payload['reference_raw']=ref
-        row['reference_low'],row['reference_high']=_split_reference(ref)
-        row['evidence']=str(before.get('evidence') or row.get('evidence',''))
-        payload['rejected_ai_pairing']=payload.pop('ai_pairing')
-        payload['ai_review_warning']='已撤回与原图行位置冲突的AI配对，恢复调整前的OCR结果，请核对'
-        payload.pop('template_warning',None)
-        if not _ambiguous_reference(ref):payload.pop('reference_warning',None)
-        row['payload_json']=payload
-        return row
-    return None
 
 
 def sources(page):
@@ -116,7 +77,6 @@ def sources(page):
 def repair_pairings(records, pages, template_id='all'):
     from .config import load_settings
     settings=load_settings()
-    if settings.mock_mode:return records
     output=deepcopy(records)
     model=None
     definitions=table_templates().get(template_id,{}).get('items',[])
@@ -130,6 +90,8 @@ def repair_pairings(records, pages, template_id='all'):
         page_no=page.get('page_index')
         anchors={}
         for i,row in enumerate(output):
+            if (row.get('payload_json') or {}).get('headerless_recovery'):
+                continue
             if row.get('page') not in (page_no,None):continue
             name=_key(_name_parts(row.get('item_original',''))[0])
             hits=[t for t in items if _key(_name_parts(t['text'])[0])==name]

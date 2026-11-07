@@ -9,28 +9,14 @@
     button.disabled = true;
     button.textContent = '正在退出…';
     try {
-      // As in BCE: acknowledge shutdown without navigating away. Navigating
-      // to /quit can add browser history and prevent automatic tab closing.
-      const response = await fetch('/quit?format=json', {
+      const response = await fetch('/quit', {
         method: 'POST', headers: {'Accept': 'application/json'}, cache: 'no-store',
         credentials: 'same-origin'
       });
       if (!response.ok) throw new Error(`退出请求失败（${response.status}）`);
-      // Older running services can return their HTML quit page even when the
-      // latest frontend asks for JSON. Read the body once, then validate the
-      // acknowledgement instead of blindly passing HTML to JSON.parse().
-      const body = await response.text();
-      let acknowledged = false;
-      try {
-        acknowledged = JSON.parse(body)?.status === 'shutting_down';
-      } catch (_) {
-        if (/^\s*<!doctype|^\s*<html|^\s*<meta/i.test(body)) {
-          const page = new DOMParser().parseFromString(body, 'text/html');
-          acknowledged = /ClinicalExtractor/i.test(page.title) &&
-            /程序已退出/.test(page.body?.textContent || '');
-        }
-      }
-      if (!acknowledged) throw new Error('程序未返回有效的退出确认，请刷新页面后重试。');
+      let acknowledged=false;
+      try { acknowledged=JSON.parse(await response.text())?.status==='shutting_down'; } catch (_) {}
+      if(!acknowledged)throw new Error('程序未返回有效的退出确认，请刷新页面后重试。');
       document.title = '已退出 · ClinicalExtractor';
       const main = document.createElement('main');
       const heading = document.createElement('h1');heading.textContent='程序正在退出';

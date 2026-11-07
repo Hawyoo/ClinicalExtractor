@@ -13,8 +13,6 @@ def correct_names(records, template_id):
         emit('未选择模板，保留逐行 OCR 结果，不让 AI 生成数值')
         return records
     settings = load_settings()
-    if settings.mock_mode:
-        return records
     from .text_extractor import _progress_model
     model = _progress_model(settings)
     catalog = {item['code']:item for item in template['items']}

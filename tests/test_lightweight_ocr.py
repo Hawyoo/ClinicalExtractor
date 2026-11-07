@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from clinical_extractor.parser import PPStructureParser, lightweight_pipeline_config
+from clinical_extractor.parser import ReportParser, lightweight_pipeline_config
 
 
 def test_pipeline_loads_only_three_models():
@@ -26,7 +26,7 @@ def test_json_coordinates_and_per_image_results_are_preserved(tmp_path, monkeypa
                      table_res_list=[dict(pred_html=html)]),
                 dict(overall_ocr_res=dict(rec_texts=['只有项目名称'], rec_boxes=[]), table_res_list=[])]
     pipeline = SimpleNamespace(predict=lambda **kwargs: iter([SimpleNamespace(json={'res': payloads.pop(0)})]))
-    instance = PPStructureParser()
+    instance = ReportParser()
     monkeypatch.setattr(instance, '_get_pipeline', lambda table_mode: pipeline)
     first = instance.parse(tmp_path / 'first.png')
     second = instance.parse(tmp_path / 'second.png')
@@ -43,7 +43,7 @@ def test_long_text_skips_tables(tmp_path, monkeypatch):
     monkeypatch.setattr(parser, 'load_settings', lambda: SimpleNamespace(mock_mode=False))
     pipeline = SimpleNamespace(predict=lambda **kwargs: iter([SimpleNamespace(
         json={'res': {'rec_texts': ['病理结果'], 'rec_boxes': [[1, 2, 3, 4]]}})]))
-    instance = PPStructureParser()
+    instance = ReportParser()
     monkeypatch.setattr(instance, '_get_pipeline', lambda table_mode: pipeline if not table_mode else None)
     result = instance.parse(tmp_path / 'pathology.jpg', table_mode=False)
     assert result.raw_text == '病理结果'

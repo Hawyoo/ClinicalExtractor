@@ -1,4 +1,4 @@
-<div class="evidence attention-evidence {% if x.attention.pairing %}pairing-evidence{% endif %}" data-review-priority="{{x.attention.priority}}" id="audit-{{x.id}}"><b>{{x.display_name}}</b> · {{x.attention.label}}{% if x.reviewed %} · 已确认{% endif %}<p>原文：{{x.evidence}}</p>
+<div class="evidence attention-evidence {% if x.attention.pairing %}pairing-evidence{% elif x.attention.warnings %}warning-evidence{% else %}name-correction-evidence{% endif %}" data-review-priority="{{x.attention.priority}}" id="audit-{{x.id}}"><span class="attention-title"><b>{{x.display_name}}</b> · {{x.attention.label}}{% if x.reviewed %} · 已确认{% endif %}</span><p>原文：{{x.evidence}}</p>
 {% for note in x.attention.warnings %}<p class="attention-warning">{{note}}</p>{% endfor %}
-{% for note in x.attention.corrections %}<p>{{note}}</p>{% endfor %}
+{% for note in x.attention.corrections %}<p class="attention-correction">{{note}}</p>{% endfor %}
 </div>

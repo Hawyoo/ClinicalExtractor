@@ -23,7 +23,7 @@ def value_is_grounded(value, evidence, item='', unit=''):
     return value in evidence
 
 
-def ungrounded_legacy_ai(record):
+def ungrounded_ai_result(record):
     payload = record.get('payload_json') or {}
     if isinstance(payload, str):
         try:
@@ -35,7 +35,7 @@ def ungrounded_legacy_ai(record):
     if record.get('source_kind') != 'text' or 'char_start' not in payload:
         return False
     if record.get('profile') == '表格式报告':
-        # Old free-text AI table results have no verified source-cell binding.
+        # Free-text results are not verified table-cell bindings.
         return True
     return not value_is_grounded(record.get('value'), record.get('evidence'),
                                  payload.get('item_ocr_original') or record.get('item_original'), record.get('unit'))

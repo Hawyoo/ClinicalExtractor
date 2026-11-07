@@ -1,4 +1,4 @@
-<tr class="{% if x.reviewed %}row-confirmed{% endif %} {% if x.attention.visible %}row-attention{% endif %} {% if x.attention.pairing %}row-ai-pairing{% endif %}" data-review-row="{{x.id}}">
+<tr class="{% if x.reviewed %}row-confirmed{% endif %} {% if x.attention.visible %}row-attention{% endif %} {% if x.attention.pairing %}row-ai-pairing{% elif x.attention.visible and not x.attention.warnings %}row-name-correction{% endif %}" data-review-row="{{x.id}}">
 <td><input aria-label="检验项目" name="item_standard" form="confirm-{{x.id}}" value="{{x.display_name}}">{% if x.attention.visible %}<a class="review-marker {% if x.attention.pairing %}review-marker-pairing{% elif x.attention.warnings %}review-marker-warning{% endif %}" href="#audit-{{x.id}}" onclick="document.getElementById('review-attention-records').open=true" title="查看该行原文与校正原因">{{x.attention.label}}</a>{% endif %}</td>
 <td><input aria-label="结果" name="value" form="confirm-{{x.id}}" value="{{x.value}}"></td>
 <td><input aria-label="单位" name="unit" form="confirm-{{x.id}}" value="{{x.unit}}"></td>

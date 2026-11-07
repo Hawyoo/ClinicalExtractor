@@ -9,12 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from clinical_extractor.parser import PPStructureParser
+from clinical_extractor.parser import ReportParser
 
 
 def main() -> None:
     print("Preparing PP-OCRv5 + SLANet_plus offline models.")
-    pipeline = PPStructureParser()._get_pipeline(table_mode=True)
+    pipeline = ReportParser()._get_pipeline(table_mode=True)
     pipeline.prepare_fallback_model()
     print("Offline OCR model cache is ready.")
 

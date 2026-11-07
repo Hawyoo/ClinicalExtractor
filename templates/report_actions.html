@@ -1,7 +1,7 @@
 <div class="report-actions-group"><div class="report-actions">
 {% if list_actions %}<a class="report-view-link" href="/report/{{action_report.id}}">查看</a>{% endif %}
-<form data-process-report="{{action_report.id}}" action="/report/{{action_report.id}}/ocr" method="post"><button class="report-process-button" type="submit">OCR 识别</button></form>
-<form data-process-report="{{action_report.id}}" action="/report/{{action_report.id}}/llm" method="post"><button class="report-process-button" type="submit">AI 处理</button></form>
+<form data-process-report="{{action_report.id}}" data-process-stage="ocr" action="/report/{{action_report.id}}/ocr" method="post"><button class="report-process-button" type="submit">OCR 识别</button></form>
+<form data-process-report="{{action_report.id}}" data-process-stage="llm" action="/report/{{action_report.id}}/llm" method="post"><button class="report-process-button" type="submit">AI 处理</button></form>
 <form data-delete-report="{{action_report.id}}" data-status="{{action_report.status}}" data-list="{{'1' if list_actions else '0'}}" action="/report/{{action_report.id}}/delete" method="post">
 <button class="report-delete-toggle report-delete-button" type="button" {% if action_report.status in ['OCR处理中','AI处理中'] %}disabled title="正在处理，完成后可删除"{% endif %}>删除</button><button class="report-confirm-delete report-delete-button" type="submit" hidden>确认删除</button>
 </form>

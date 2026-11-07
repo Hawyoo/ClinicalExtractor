@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import UPLOAD_DIR
+from . import config
 from .db import connect, now_iso
 
 MANIFEST_NAME = "clinical-extractor-ocr-transfer.json"
@@ -27,8 +27,7 @@ EXTRACTION_FIELDS = (
 
 
 def _stored_path(file_path: str) -> Path:
-    path = Path(file_path)
-    return path if path.exists() else UPLOAD_DIR / path.name
+    return config.UPLOAD_DIR / Path(file_path).name
 
 
 @dataclass(frozen=True)
@@ -50,10 +49,11 @@ def _read_manifest(source: Path) -> dict:
     return manifest
 
 
-def create_ocr_transfer(destination: Path) -> int:
-    """Export every OCR-ready report, including reports updated by Ollama."""
+def create_transfer(destination: Path) -> int:
+    """Export all reports, including untouched originals and processed results."""
     with connect() as con:
-        reports = con.execute("SELECT * FROM reports WHERE raw_text<>'' ORDER BY id").fetchall()
+        con.execute('BEGIN')
+        reports = con.execute("SELECT * FROM reports ORDER BY id").fetchall()
         extractions = {
             row["id"]: [dict(x) for x in con.execute(
                 "SELECT * FROM extractions WHERE report_id=? ORDER BY sort_order,id", (row["id"],)
@@ -61,7 +61,10 @@ def create_ocr_transfer(destination: Path) -> int:
             for row in reports
         }
     if not reports:
-        raise ValueError("没有可导出的 OCR 结果")
+        raise ValueError("没有可导出的报告")
+    for report in reports:
+        if not report['raw_text'].strip() and not _stored_path(report['file_path']).is_file():
+            raise ValueError(f"原始文件缺失，无法打包未处理的报告：{report['filename']}")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -75,7 +78,7 @@ def create_ocr_transfer(destination: Path) -> int:
         for report in reports:
             archive_file = ""
             source = _stored_path(report["file_path"])
-            if source.exists():
+            if source.is_file():
                 archive_file = f"uploads/{report['id']}_{source.name}"
                 archive.write(source, archive_file)
             manifest["reports"].append({
@@ -90,7 +93,7 @@ def create_ocr_transfer(destination: Path) -> int:
     return len(reports)
 
 
-def inspect_ocr_transfer(source: Path) -> dict:
+def inspect_transfer(source: Path) -> dict:
     """Preview conflicts using stable report keys, without changing local data."""
     manifest = _read_manifest(source)
     conflicts = []
@@ -118,12 +121,12 @@ def _copy_source_file(archive: zipfile.ZipFile, archive_file: str) -> str:
     if archive_file not in archive.namelist() or not archive_file.startswith("uploads/"):
         raise ValueError("OCR 数据包包含无效的原始文件路径")
     stored_name = f"{uuid.uuid4().hex[:10]}_{Path(archive_file).name}"
-    with archive.open(archive_file) as reader, (UPLOAD_DIR / stored_name).open("wb") as writer:
+    with archive.open(archive_file) as reader, (config.UPLOAD_DIR / stored_name).open("wb") as writer:
         shutil.copyfileobj(reader, writer)
-    return str(UPLOAD_DIR / stored_name)
+    return str(config.UPLOAD_DIR / stored_name)
 
 
-def import_ocr_transfer(source: Path, replace_keys: set[str] | None = None) -> ImportResult:
+def import_transfer(source: Path, replace_keys: set[str] | None = None) -> ImportResult:
     """Import new reports and replace only explicitly selected existing reports."""
     replace_keys = replace_keys or set()
     manifest = _read_manifest(source)
@@ -145,14 +148,18 @@ def import_ocr_transfer(source: Path, replace_keys: set[str] | None = None) -> I
                 else:
                     imported += 1
                 file_path = _copy_source_file(archive, str(entry.get("archive_file") or ""))
+                raw_text = str(record.get('raw_text') or '')
+                status = str(record.get('status') or ('OCR已完成' if raw_text.strip() else '未处理'))
+                if status in {'OCR排队中','OCR处理中','AI排队中','AI处理中'}:
+                    status = 'OCR已完成' if raw_text.strip() else '未处理'
                 con.execute("""
-                    INSERT INTO reports(patient_id,report_date,report_type,profile,filename,file_path,status,raw_text,parser_json,error,transfer_key,created_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                    INSERT INTO reports(patient_id,report_type,profile,filename,file_path,status,raw_text,parser_json,error,transfer_key,created_at)
+                    VALUES(?,?,?,?,?,?,?,?,?,?,?)
                 """, (
-                    str(record.get("patient_id", "")), "",
+                    str(record.get("patient_id", "")),
                     str(record.get("report_type", "")), str(record.get("profile", "长文本报告")),
                     str(record.get("filename", "导入报告")), file_path,
-                    str(record.get("status", "OCR已完成")), str(record.get("raw_text", "")),
+                    status, raw_text,
                     str(record.get("parser_json", "")), str(record.get("error", "")), key,
                     str(record.get("created_at", now_iso())),
                 ))

@@ -1,3 +1,4 @@
+from clinical_extractor import config
 import sys
 from types import SimpleNamespace
 
@@ -24,7 +25,7 @@ def test_next_task_reloads_pipeline_when_thread_setting_changes(monkeypatch):
         calls.append(kwargs)
         return SimpleNamespace()
     monkeypatch.setitem(sys.modules,'paddlex',SimpleNamespace(create_pipeline=create_pipeline))
-    instance=parser.PPStructureParser()
+    instance=parser.ReportParser()
     first=instance._get_pipeline(True)
     assert instance._get_pipeline(True) is first
     assert len(calls)==1
@@ -43,7 +44,7 @@ def test_settings_allow_n_minus_one_threads_and_reject_negative_counts(tmp_path,
     from fastapi.testclient import TestClient
     from clinical_extractor import config,db,main
     monkeypatch.setattr(config,'SETTINGS_PATH',tmp_path/'settings.json')
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     with TestClient(main.app) as client:
         values=dict(ollama_url='http://localhost:11434',ollama_model='qwen3:8b',ocr_cpu_threads='11')
         assert client.post('/settings',data=values,follow_redirects=False).status_code==303

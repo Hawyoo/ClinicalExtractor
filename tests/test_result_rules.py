@@ -1,3 +1,4 @@
+from clinical_extractor import config
 from fastapi.testclient import TestClient
 from clinical_extractor import db, main, exporter
 from clinical_extractor.result_rules import is_header_name, is_header_record
@@ -12,7 +13,7 @@ def test_headers_are_not_analytes_and_no_is_a_real_analyte():
 
 
 def test_storage_view_export_and_single_result_delete(tmp_path,monkeypatch):
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'data.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'data.sqlite3')
     db.init_db()
     original=tmp_path/'original.png';original.write_bytes(b'original image')
     with db.connect() as con:

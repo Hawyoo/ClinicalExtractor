@@ -42,17 +42,19 @@ if not exist "%PORTABLE%\data\exports" mkdir "%PORTABLE%\data\exports"
 if not exist "%PORTABLE%\logs" mkdir "%PORTABLE%\logs"
 if not exist "%PORTABLE%\models\paddlex-cache" mkdir "%PORTABLE%\models\paddlex-cache"
 if not exist ".portable-model-cache\official_models" goto :model_error
-xcopy /E /I /Y ".portable-model-cache\official_models" "%PORTABLE%\models\paddlex-cache\official_models\" >nul
-if errorlevel 2 goto :error
+".venv\Scripts\python.exe" scripts\copy-portable-models.py ".portable-model-cache\official_models" "%PORTABLE%\models\paddlex-cache\official_models"
+if errorlevel 1 goto :error
 copy /Y "docs\WINDOWS_PORTABLE.md" "%PORTABLE%\WINDOWS_PORTABLE.md" >nul
+copy /Y "LICENSE" "%PORTABLE%\LICENSE" >nul
+copy /Y "THIRD_PARTY.md" "%PORTABLE%\THIRD_PARTY.md" >nul
 copy /Y "scripts\portable-startup.ps1" "%PORTABLE%\portable-startup.ps1" >nul
-copy /Y "scripts\Start-ClinicalExtractor.bat" "%PORTABLE%\Start-ClinicalExtractor.bat" >nul
 copy /Y "static\clinical-extractor.ico" "%PORTABLE%\clinical-extractor.ico" >nul
 if exist "%DATA_BACKUP%" (
   echo Restoring existing Portable data...
   robocopy "%DATA_BACKUP%" "%PORTABLE%\data" /E /R:1 /W:1 >nul
   if errorlevel 8 goto :error
-  rmdir /S /Q "%DATA_BACKUP%"
+  ".venv\Scripts\python.exe" scripts\archive-build-backup.py
+  if errorlevel 1 goto :error
 )
 
 echo.

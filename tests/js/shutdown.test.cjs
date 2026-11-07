@@ -26,9 +26,9 @@ test('JSON shutdown acknowledgement',async()=>{
   const result=await simulate('{"status":"shutting_down"}');
   assert.equal(result.replaced,true);assert.equal(result.alerts.length,0);
 });
-test('legacy HTML quit page is accepted without JSON parse error',async()=>{
+test('unexpected HTML is rejected without JSON parse error',async()=>{
   const result=await simulate('<!doctype html><title>已退出 · ClinicalExtractor</title><h1>程序已退出</h1>');
-  assert.equal(result.replaced,true);assert.equal(result.alerts.length,0);
+  assert.equal(result.replaced,false);assert.equal(result.alerts.length,1);
 });
 test('unrelated HTML is not treated as successful shutdown',async()=>{
   const result=await simulate('<!doctype html><title>Error</title><h1>发生错误</h1>');

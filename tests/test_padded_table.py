@@ -1,3 +1,4 @@
+from clinical_extractor import config
 from pathlib import Path
 
 from clinical_extractor.report_editing import edited_table
@@ -38,7 +39,7 @@ def test_history_column_excluded_from_header_recovery():
 
 def test_ai_stage_uses_readable_ocr_text_when_html_structure_is_missing(tmp_path, monkeypatch):
     from clinical_extractor import db, service, table_ai
-    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'reports.sqlite3')
     monkeypatch.setattr(table_ai, 'correct_names', lambda rows, _: rows)
     db.init_db()
     with db.connect() as con:

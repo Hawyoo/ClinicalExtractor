@@ -1,10 +1,11 @@
+from clinical_extractor import config
 from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 
 def test_default_order_and_live_states_include_reports_without_jobs(tmp_path,monkeypatch):
     from clinical_extractor import db,main
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     db.init_db()
     with db.connect() as con:
         ids=[con.execute('INSERT INTO reports(filename,file_path,created_at) VALUES(?,?,?)',

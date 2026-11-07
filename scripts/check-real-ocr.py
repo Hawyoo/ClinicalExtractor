@@ -6,7 +6,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from clinical_extractor.parser import PPStructureParser
+from clinical_extractor.parser import ReportParser
 
 if __name__ == "__main__":
     import argparse
@@ -17,12 +17,11 @@ if __name__ == "__main__":
     args.add_argument('--text-only', action='store_true')
     args.add_argument('--output', help='Optional JSON snapshot for local inspection')
     args.add_argument('--cpu-threads', type=int, help='Read-only standalone benchmark thread count')
-    args.add_argument('--mkldnn', action='store_true', help='Retry oneDNN in this standalone test process')
     opts = args.parse_args()
     from clinical_extractor.ocr_process import OCR_PARSER
-    if opts.isolated and (opts.cpu_threads or opts.mkldnn):
+    if opts.isolated and opts.cpu_threads:
         args.error('Benchmark options use standalone mode, which already runs in a separate process')
-    parser = OCR_PARSER if opts.isolated else PPStructureParser(cpu_threads=opts.cpu_threads, enable_mkldnn=opts.mkldnn)
+    parser = OCR_PARSER if opts.isolated else ReportParser(cpu_threads=opts.cpu_threads)
     try:
         for index in range(opts.repeat):
             started = time.perf_counter()

@@ -47,10 +47,6 @@ def test_reliable_coordinates_skip_both_table_loading_and_inference():
 
 
 def test_unreliable_page_uses_fallback_then_next_reliable_page_skips_it(monkeypatch):
-    from clinical_extractor import ocr_row_repair
-    def forbidden(*args,**kwargs):
-        raise AssertionError('No local OCR is allowed')
-    monkeypatch.setattr(ocr_row_repair,'repair_cross_row_boxes',forbidden)
     broken=page()
     broken['rec_texts'][0]='无法定位的表头'
     pipeline,calls=setup([broken,deepcopy(broken),page()])

@@ -42,9 +42,9 @@ def _worker(connection, log_path):
             time.sleep(1)
         os._exit(0)
     threading.Thread(target=watch_parent, daemon=True).start()
-    from .parser import PPStructureParser
+    from .parser import ReportParser
     from .jobs import _callback
-    parser = PPStructureParser()
+    parser = ReportParser()
     _callback.set(lambda message, **metrics: connection.send(('progress', message, metrics)))
     while True:
         try:

@@ -8,7 +8,7 @@ def test_liver_subset_and_extra_item_are_preserved():
         dict(item_original='血肌酐', value='68', unit='umol/L',reference_low='41',reference_high='81'),
         dict(item_original='C反应蛋白', item_standard='C反应蛋白',value='2',unit='mg/L',reference_low='0',reference_high='10'),
     ]
-    result = apply_table_template(rows, 'liver_kidney')
+    result = apply_table_template(rows, 'all')
     assert len(result) == 3
     assert [r['value'] for r in result] == ['18','68','2']
     assert [r['item_standard'] for r in result] == ['ALT','CREA','C反应蛋白']
@@ -29,7 +29,7 @@ def test_single_sided_ranges_and_unitless_ratio():
         dict(item_original='总胆红素',value='10',unit='umol/L',payload_json={'reference_raw':'<23'}),
         dict(item_original='白/球比值',value='1.6',unit='',reference_low='1.2',reference_high='2.4'),
     ]
-    result = apply_table_template(rows,'liver_kidney')
+    result = apply_table_template(rows,'all')
     assert result[0]['payload_json']['template_match']['reference_match']
     assert result[0]['unit'] == 'umol/L'
     assert result[1]['item_standard'] == 'A/G'
@@ -38,15 +38,14 @@ def test_single_sided_ranges_and_unitless_ratio():
 
 def test_partial_templates_accept_range_variation_without_overwriting():
     rows = [dict(item_original='血肌酐',value='80',unit='umol/L',reference_low='50',reference_high='100')]
-    result = apply_table_template(rows,'liver_kidney')
+    result = apply_table_template(rows,'all')
     assert result[0]['item_standard'] == 'CREA'
     assert (result[0]['reference_low'],result[0]['reference_high']) == ('50','100')
     assert 'template_warning' in result[0]['payload_json']
     assert all(t.get('coverage') == 'partial' for t in table_templates().values())
-    assert 'source' not in table_templates()['liver_kidney']
+    assert 'source' not in table_templates()['all']
     catalog = table_templates()
-    assert catalog['liver_kidney'] is catalog['all']
-    assert catalog['cbc'] is catalog['all']
+    assert set(catalog)=={'all'}
     assert item_abbreviation({'item_standard':'CK-ISO'}) == ''
 def test_template_micro_units_are_ascii_and_ocr_variants_remain_accepted():
     from clinical_extractor.report_templates import table_templates, apply_table_template
@@ -55,11 +54,11 @@ def test_template_micro_units_are_ascii_and_ocr_variants_remain_accepted():
     for path in PROFILE_DIR.rglob('*.yaml'):
         content = path.read_text(encoding='utf-8')
         assert '\u03bc' not in content and '\u00b5' not in content
-    units = {item['code']:item.get('expected_unit') for item in catalog['liver_kidney']['items']}
+    units = {item['code']:item.get('expected_unit') for item in catalog['all']['items']}
     assert units['HCY'] == 'umol/L'
     assert units['TC'] == 'mmol/L'
     for unit in ('umol/L', '\u03bcmol/L', '\u00b5mol/l'):
-        record = apply_table_template([dict(item_original='同型半胱氨酸',value='8.2',unit=unit)], 'liver_kidney')[0]
+        record = apply_table_template([dict(item_original='同型半胱氨酸',value='8.2',unit=unit)], 'all')[0]
         assert record['unit'] == 'umol/L'
         assert record['value'] == '8.2'
 
@@ -76,7 +75,7 @@ def test_cbc_reference_variants_preserve_report_bounds_and_retire_old_warning():
         for reference in ranges:
             low,high = reference.split('-')
             record = dict(item_original=name,value=value,unit=unit,reference_low=low,reference_high=high)
-            result = apply_table_template([record],'cbc')[0]
+            result = apply_table_template([record],'all')[0]
             assert result['item_standard'] == code
             assert result['value'] == value
             assert (result['reference_low'],result['reference_high']) == (low,high)
@@ -84,7 +83,7 @@ def test_cbc_reference_variants_preserve_report_bounds_and_retire_old_warning():
             assert 'template_warning' not in result['payload_json']
         legacy = dict(item_standard=code,reference_low=low,reference_high=high,
                       payload_json=json.dumps({'template_warning':'项目名称明确，但报告参考范围与参考模板不同；保留报告原范围，请核对'}))
-        refresh_reference_warning(legacy,'cbc')
+        refresh_reference_warning(legacy,'all')
         assert not attention_for(legacy)['visible']
 
 
@@ -97,11 +96,11 @@ def test_reapplying_cbc_template_clears_obsolete_warning_without_touching_result
                                          ('红细胞比容','HCT','36.4','35-45','%')]:
         record=dict(item_original=name,item_standard=code,value=value,unit=unit,
                     payload_json={'reference_raw':reference,'template_warning':warning})
-        result=apply_table_template([record],'cbc')[0]
+        result=apply_table_template([record],'all')[0]
         assert result['value']==value and result['item_standard']==code
         assert 'template_warning' not in result['payload_json']
         legacy=dict(item_standard=code,value=value,payload_json=json.dumps({'reference_raw':reference,'template_warning':warning}))
-        refresh_reference_warning(legacy,'cbc')
+        refresh_reference_warning(legacy,'all')
         assert 'template_warning' not in legacy['payload_json']
 
 
@@ -120,7 +119,7 @@ def test_liver_added_names_and_reference_variants_match_without_changing_values(
     ]
     records = [dict(item_original=name,value=value,unit=unit,payload_json={'reference_raw':reference})
                for name,value,unit,reference,code in definitions]
-    result = apply_table_template(records,'liver_kidney')
+    result = apply_table_template(records,'all')
     assert [r['item_standard'] for r in result] == [d[4] for d in definitions]
     assert [r['value'] for r in result] == [d[1] for d in definitions]
     assert all('template_warning' not in r['payload_json'] for r in result)
@@ -135,7 +134,7 @@ def test_related_liver_items_remain_separate_template_entries():
                    ('碳酸氢根','20-31','HCO3'),('二氧化碳结合力','20.0-31.0','CO2CP')]
     result = apply_table_template([dict(item_original=name,value='5.20',unit='mmol/L',
                                       payload_json={'reference_raw':reference})
-                                   for name,reference,code in definitions],'liver_kidney')
+                                   for name,reference,code in definitions],'all')
     assert [r['item_standard'] for r in result] == [d[2] for d in definitions]
     assert len(result)==4
 

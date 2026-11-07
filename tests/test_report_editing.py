@@ -1,3 +1,4 @@
+from clinical_extractor import config
 import json
 from copy import deepcopy
 
@@ -13,7 +14,7 @@ from clinical_extractor.table_extractor import extract_table_rows
 
 @pytest.fixture
 def report(tmp_path,monkeypatch):
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'reports.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'reports.sqlite3')
     db.init_db()
     raw='项目名称\t结果\t单位\n白细胞计数\t5.1\t10^9/L'
     html='<table><tr><td>项目名称</td><td>结果</td><td>单位</td></tr><tr><td>白细胞计数</td><td>5.1</td><td>10^9/L</td></tr></table>'
@@ -57,7 +58,7 @@ def test_names_only_edited_text_never_generates_results(report):
     rid,eid,_=report
     with TestClient(main.app) as client:
         assert client.post(f'/report/{rid}/ocr-text',data={'text':'白细胞计数\n红细胞计数'}).status_code==200
-        with pytest.raises(ValueError,match='表头'):
+        with pytest.raises(ValueError,match='不能根据项目名单'):
             service.process_report(rid,'llm')
         with db.connect() as con:
             assert con.execute('SELECT value FROM extractions WHERE id=?',(eid,)).fetchone()[0]=='5.1'
@@ -111,11 +112,11 @@ def test_edited_text_and_manual_order_survive_transfer(report,tmp_path,monkeypat
         client.post(f'/report/{rid}/ocr-text',data={'text':original.replace('5.1','5.8')})
         assert client.post(f'/report/{rid}/extractions/add',data={'item_name':'HGB','value':'119','after_eid':'0'}).status_code==200
     packet=tmp_path/'edited.ceocr'
-    transfer.create_ocr_transfer(packet)
-    monkeypatch.setattr(db,'DB_PATH',tmp_path/'destination.sqlite3')
-    monkeypatch.setattr(transfer,'UPLOAD_DIR',tmp_path)
+    transfer.create_transfer(packet)
+    monkeypatch.setattr(config, 'DB_PATH',tmp_path/'destination.sqlite3')
+    monkeypatch.setattr(config, 'UPLOAD_DIR',tmp_path)
     db.init_db()
-    transfer.import_ocr_transfer(packet)
+    transfer.import_transfer(packet)
     with db.connect() as con:
         incoming=con.execute('SELECT * FROM reports').fetchone()
         assert incoming['raw_text'].endswith('5.8\t10^9/L')

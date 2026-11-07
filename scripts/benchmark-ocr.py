@@ -30,9 +30,9 @@ def stop_test_process(process):
 
 
 def worker(args):
-    from clinical_extractor.parser import PPStructureParser
+    from clinical_extractor.parser import ReportParser
     from clinical_extractor.table_extractor import extract_table_rows
-    parser=PPStructureParser(cpu_threads=args.worker)
+    parser=ReportParser(cpu_threads=args.worker)
     start=time.perf_counter()
     parser._get_pipeline(True)
     output={'threads':args.worker,'load_seconds':round(time.perf_counter()-start,2),'runs':[]}

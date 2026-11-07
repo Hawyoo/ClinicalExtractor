@@ -2,7 +2,7 @@
 import re
 from html import escape
 from .parser import TableBlock
-from .table_extractor import HEADER_ALIASES, _find_col, _result_col
+from .table_extractor import HEADER_ALIASES, _find_col, _result_col, extract_table_rows
 
 
 def edited_table(text):
@@ -25,8 +25,10 @@ def edited_table(text):
         rows.append(cells)
     header=next((index for index,row in enumerate(rows)
                  if _find_col(row,HEADER_ALIASES['item']) is not None and _result_col(row) is not None),None)
-    if header is None:
-        raise ValueError('请保留“项目名称、结果”等表头，并用 Tab 或竖线 | 分隔各列；不能从项目名单猜测数值。')
-    rows=rows[header:]
+    if header is not None:
+        rows=rows[header:]
     html='<table>'+''.join('<tr>'+''.join('<td>'+escape(cell)+'</td>' for cell in row)+'</tr>' for row in rows)+'</table>'
-    return TableBlock(page=None,html=html,rows=rows)
+    block=TableBlock(page=None,html=html,rows=rows)
+    if header is None and not extract_table_rows(block):
+        raise ValueError('未找到可对应的表格行；可不含表头，但项目和结果须在同一行，用 Tab 或竖线 | 分隔。不能根据项目名单猜测数值。')
+    return block

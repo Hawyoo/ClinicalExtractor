@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block content %}
+<section class="card project-welcome">
+<h2>创建或打开项目</h2>
+<p class="muted">请先选择项目，再导入和处理报告。项目文件夹被删除或移动后，不会自动重建或切换到其他项目。</p>
+{% if notice %}<p class="notice">{{notice}}</p>{% endif %}
+<form action="/projects/create" method="post" class="project-welcome-form">
+<label>新项目名称<input name="name" required maxlength="80" autocomplete="off" placeholder="填写项目名称"></label>
+{% if legacy_available %}<label class="project-legacy"><input type="checkbox" name="import_legacy" value="true">将旧版数据导入此项目（保留审核状态与原文件备份）</label>{% endif %}
+<button type="submit">创建项目</button></form>
+<hr>
+<form action="/projects/open" method="post" class="project-welcome-form"><label>已有项目文件夹路径<input name="folder" required placeholder="粘贴包含 project.json 的文件夹路径"></label><button class="secondary" type="submit">打开已有项目</button></form>
+{% if projects %}<p class="muted">也可从顶部“当前项目”选择已登记的项目。</p>{% endif %}
+</section>
+{% endblock %}

@@ -1,10 +1,11 @@
+from clinical_extractor import config
 import copy
 import json
 from types import SimpleNamespace
 
 import numpy as np
 
-from clinical_extractor.ocr_row_repair import repair_cross_row_boxes, result_rows, assignment_warnings
+from clinical_extractor.row_validation import result_rows, assignment_warnings
 from clinical_extractor.parser import coordinate_table_rows, TableBlock
 from clinical_extractor.table_extractor import extract_table_rows
 
@@ -18,31 +19,8 @@ def merged_document():
     return dict(rec_texts=[p[0] for p in pairs],rec_boxes=[p[1] for p in pairs],rec_scores=[.99]*len(pairs))
 
 
-def test_generic_cross_row_repair_uses_pixels_not_analyte_replacements():
-    ocr = merged_document()
-    original_values = [r[1] for r in result_rows(ocr)]
-    labels = iter(['Alpha','Beta','Gamma'])
-    recognizer = lambda images: iter([{'rec_text':next(labels),'rec_score':.99}])
-    pipeline = SimpleNamespace(predict=lambda **kwargs:iter([]))
-    repairs = repair_cross_row_boxes(ocr,np.zeros((400,600,3),dtype=np.uint8),pipeline,recognizer)
-    assert [r[1] for r in result_rows(ocr)] == original_values == ['11','22','33']
-    rows = coordinate_table_rows(ocr)
-    table = TableBlock(0,'',rows,row_repairs=repairs)
-    records = extract_table_rows(table)
-    assert [(r['item_original'],r['value']) for r in records] == [('Alpha','11'),('Beta','22'),('Gamma','33')]
-    assert all('item_correction' in r['payload_json'] for r in records)
-    assert assignment_warnings(ocr,[table]) == []
 
 
-def test_failed_repair_never_splits_text_or_duplicates_values():
-    ocr = merged_document()
-    original = copy.deepcopy(ocr)
-    recognizer = lambda images:iter([{'rec_text':'unreliable','rec_score':.1}])
-    assert repair_cross_row_boxes(ocr,np.zeros((400,600,3),dtype=np.uint8),
-                                 SimpleNamespace(predict=lambda **kwargs:iter([])),recognizer) == []
-    assert ocr['rec_texts'] == original['rec_texts']
-    assert coordinate_table_rows(ocr) == []
-    assert [warning['value'] for warning in assignment_warnings(ocr,[])] == ['11','22','33']
 
 
 def test_assignment_counts_repeated_equal_results_individually():
@@ -55,7 +33,7 @@ def test_assignment_counts_repeated_equal_results_individually():
 
 
 def test_number_header_prefix_does_not_mark_every_result_as_duplicate():
-    from clinical_extractor.ocr_row_repair import saved_assignment_warnings
+    from clinical_extractor.row_validation import saved_assignment_warnings
     from clinical_extractor.parser import table_region
     ocr = merged_document()
     ocr['rec_texts'][0] = 'No项目名称'
@@ -83,6 +61,26 @@ def test_unavailable_source_column_is_not_evidence_of_duplicate_results():
     assert warnings[0]['kind'] == 'verification_unavailable'
 
 
+def test_report_does_not_display_unavailable_verification_as_bad_assignments(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from clinical_extractor import db, main, row_validation
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path/'reports.sqlite3')
+    db.init_db()
+    with db.connect() as con:
+        rid = con.execute('''INSERT INTO reports(filename,file_path,status,created_at,parser_json)
+                             VALUES(?,?,?,?,?)''', ('table.png','table.png','待审核',db.now_iso(),
+                                                   json.dumps([{'page_index':0}]))).lastrowid
+    unavailable = {'kind':'verification_unavailable', 'message':'本页未能独立定位结果列，无法完成数量核验；这不代表结果重复，请核对原图。'}
+    monkeypatch.setattr(row_validation, 'saved_assignment_warnings', lambda *args:[unavailable])
+    with TestClient(main.app) as client:
+        text = client.get(f'/report/{rid}').text
+        assert unavailable['message'] not in text
+        assert '存在未能可靠对应的结果，请核对原图' not in text
+        actual = '结果 11 的表格配对数量超过原图独立结果数量，请核对。'
+        monkeypatch.setattr(row_validation, 'saved_assignment_warnings', lambda *args:[unavailable,{'message':actual,'value':'11'}])
+        assert actual in client.get(f'/report/{rid}').text
+
+
 def test_real_duplicate_assignment_is_still_reported():
     ocr = merged_document()
     table = TableBlock(0,'',[['项目','结果'],['Alpha','11'],['Beta','22'],['Gamma','33'],['Extra','11']])
@@ -98,6 +96,6 @@ def test_ai_accepts_fenced_json_but_still_cannot_generate_values(monkeypatch):
     monkeypatch.setattr(text_extractor,'_progress_model',lambda settings:fake)
     monkeypatch.setattr(table_ai,'load_settings',lambda:SimpleNamespace(mock_mode=False))
     rows = [dict(item_original='白细胞计数',unit='10^9/L',value='5.1',payload_json={})]
-    result = table_ai.correct_names(rows,'cbc')
+    result = table_ai.correct_names(rows,'all')
     assert result[0]['payload_json']['ai_template_code'] == 'WBC'
     assert result[0]['value'] == '5.1'

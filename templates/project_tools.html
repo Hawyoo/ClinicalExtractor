@@ -1,0 +1,17 @@
+{% if project_management_enabled %}
+<div class="project-switcher">
+<form action="/projects/switch" method="post" id="switch-project">
+<label for="current-project">当前项目</label>
+<select id="current-project" name="project_id" aria-label="当前项目">{% if not current_project %}<option value="" selected disabled>请选择项目</option>{% endif %}{% for project in projects %}<option value="{{project.id}}" {% if current_project and project.id == current_project.id %}selected{% endif %}>{{project.name}}</option>{% endfor %}</select>
+</form>
+<details class="toolbar-menu project-menu"><summary>项目管理</summary><div class="toolbar-panel">
+<form action="/projects/create" method="post"><label>新项目名称<input name="name" required maxlength="80" autocomplete="off"></label>{% if legacy_available %}<label class="project-legacy"><input type="checkbox" name="import_legacy" value="true">将旧版数据导入此项目</label>{% endif %}<button type="submit">新建项目</button></form>
+<form action="/projects/open" method="post"><label>已有项目文件夹路径<input name="folder" required placeholder="粘贴项目文件夹路径"></label><button type="submit">打开已有项目</button></form>
+<p class="muted">项目文件夹需包含 project.json。报告、审核和导出按项目隔离；模型和软件设置共用。队列完成后才能切换。</p>
+{% if current_project %}<p class="project-folder">当前文件夹：{{current_project.path}}</p>
+<details class="project-delete-confirm"><summary>删除当前项目</summary><p>项目将从列表移除，整个文件夹移入 DELETE，可恢复。</p><form action="/projects/delete" method="post"><input type="hidden" name="project_id" value="{{current_project.id}}"><button class="delete-result-button" type="submit">确认删除项目</button></form></details>{% endif %}
+</div></details>
+</div>
+<script>window.clinicalProjectId={{(current_project.id if current_project else '__none__')|tojson}};</script>
+<script src="/static/projects.js?v=20261105-project-start" defer></script>
+{% endif %}

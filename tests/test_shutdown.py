@@ -1,3 +1,4 @@
+from clinical_extractor import config
 import json
 import os
 from pathlib import Path
@@ -8,14 +9,14 @@ import time
 import urllib.request
 
 
-def test_explicit_json_quit_format(tmp_path, monkeypatch):
+def test_quit_returns_json_acknowledgement(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from clinical_extractor import db, main
-    monkeypatch.setattr(db, 'DB_PATH', tmp_path / 'quit.sqlite3')
+    monkeypatch.setattr(config, 'DB_PATH', tmp_path / 'quit.sqlite3')
     callbacks = []
     monkeypatch.setattr(main, '_exit_after_response', lambda: callbacks.append('exit'))
     with TestClient(main.app) as client:
-        response = client.post('/quit?format=json', headers={'Accept':'text/html'})
+        response = client.post('/quit', headers={'Accept':'text/html'})
     assert response.json() == {'status':'shutting_down'}
     assert response.headers['content-type'].startswith('application/json')
     assert callbacks == ['exit']

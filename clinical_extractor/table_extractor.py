@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re
+import unicodedata
 from collections import Counter
 from typing import Iterable
 from .parser import TableBlock
@@ -92,9 +93,133 @@ def _align_padded_header(headers, body):
     return aligned
 
 
+ROW_UNIT = r'(?:[A-Za-zµμ0-9^²]+(?:/[A-Za-zµμ0-9^².,]+)+|[%％][06]?|fL|pg)'
+
+
+def _layout_noise(cell, flag):
+    """Standalone layout marks, never fragments containing a number or unit."""
+    reserved = '<>≤≥+−-/%％^'
+    return bool(cell.strip()) and all(
+        char.isspace() or re.fullmatch(flag, char) or
+        (char not in reserved and unicodedata.category(char).startswith('P'))
+        for char in cell)
+
+
+def _row_fragments(cells, number, interval, flag):
+    """Split a cell only when every character has a known row role.
+
+    Original strings remain in evidence. Token offsets stay ordered so a
+    missing Tab never moves a result across rows or creates a new number.
+    """
+    token = re.compile(rf'\s*(?:{ROW_UNIT}|{interval}|{number}|{flag})')
+    fragments = []
+    splits = []
+    for _, cell in cells:
+        position = 0
+        parts = []
+        while position < len(cell):
+            match = token.match(cell, position)
+            if not match or match.end() == position:
+                parts = [cell]  # Unknown text/numbers must not be discarded.
+                break
+            part = match[0].strip()
+            if part:
+                parts.append(part)
+            position = match.end()
+        if len(parts) > 1:
+            splits.append({'original':cell, 'fragments':parts})
+        fragments.extend(parts)
+    return list(enumerate(fragments)), splits
+
+
+def _headerless_rows(block: TableBlock, rows):
+    """Bind only same-line cells; never choose between competing numbers."""
+    # A partial header is still authoritative (especially a history column).
+    if any(is_column_header(cell, role) or any(word in cell.casefold() for word in
+           ('历史结果', '既往结果', 'previous', 'history'))
+           for row in rows for cell in row for role in HEADER_ALIASES):
+        return []
+    number = r'(?:[<>≤≥]=?)?\s*[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?'
+    interval = r'[+-]?\d+(?:\.\d+)?\s*[-~～—–至]\s*[+-]?\d+(?:\.\d+)?'
+    flag = r'[↑↓↗↘→←↔=＝+\-—~\sHLhlKkVW区以一]*'
+    out = []
+    for row in rows:
+        cells = [(i, str(cell).strip()) for i, cell in enumerate(row) if str(cell).strip()]
+        names = [(i, cell) for i, cell in cells
+                 if (re.search(r'[\u4e00-\u9fff]', cell) or
+                     re.fullmatch(r'[A-Za-z][A-Za-z0-9.()（）_-]*(?:/[A-Za-z]+)?', cell))
+                 and not re.fullmatch(flag, cell)
+                 and not re.fullmatch(rf'{flag}(?:{interval}|{number}){flag}', cell)
+                 and not re.search(r'[/％%]|^(?:fL|pg)$', cell, re.I)]
+        # Ratios contain a slash in their name, not a concentration unit.
+        names += [(i, cell) for i, cell in cells if re.search(r'[\u4e00-\u9fff]', cell)
+                  and '/' in cell and not re.search(r'[A-Za-z]', cell)]
+        if len(names) != 1:
+            continue
+        item_i, item = names[0]
+        if is_header_name(item):
+            continue
+        tail = [(i, cell) for i, cell in cells if i > item_i]
+        tail, splits = _row_fragments(tail, number, interval, flag)
+        # Serial numbers before the name are excluded by position.
+        ranges = [(i, cell) for i, cell in tail if re.fullmatch(interval, cell)]
+        numeric = [(i, cell) for i, cell in tail
+                   if re.fullmatch(number + r'\s*[↑↓HLhl]?', cell)]
+        # A comparator after a result can be a reference bound; before it the
+        # role is ambiguous. Do not infer a result from a reference alone.
+        bounds = [(i, cell) for i, cell in numeric if re.match(r'[<>≤≥]', cell)]
+        if len(numeric) >= 2 and bounds and bounds[0][0] > numeric[0][0]:
+            ranges += bounds
+            numeric = [(i, cell) for i, cell in numeric if (i, cell) not in bounds]
+        if not numeric and not ranges and not any(re.search(r'\d', cell)
+                and not re.fullmatch(ROW_UNIT, cell) for _, cell in tail):
+            continue
+        units = [(i, cell) for i, cell in tail if re.fullmatch(ROW_UNIT, cell)]
+        value = numeric[0][1] if len(numeric) == 1 else ''
+        ref = ranges[0][1] if len(ranges) == 1 else ''
+        warning = ''
+        if (len(numeric) != 1 or len(ranges) > 1 or (bounds and not ranges) or
+                (ranges and numeric and numeric[0][0] >= ranges[0][0])):
+            value = ''
+            warning = '本行结果与参考区间未能唯一对应；结果留空，请对照原图填写'
+        # Unknown fragments may contain a merged result/history pair.
+        accounted = {i for i, _ in numeric + ranges + units}
+        noise = []
+        if value and len(ranges) == 1:
+            # A punctuation-only cell after an independent result does not
+            # invalidate a uniquely identified result/reference pair. Keep
+            # these original marks in the audit; do not strip inside numbers.
+            noise = [(i, cell) for i, cell in tail if i not in accounted
+                     and i > numeric[0][0] and _layout_noise(cell, flag)
+                     and not re.fullmatch(flag, cell)]
+            accounted.update(i for i, _ in noise)
+        if any(i not in accounted and not re.fullmatch(flag, cell) for i, cell in tail):
+            value = ''
+            warning = '本行含有未能区分的内容；结果留空，请对照原图填写'
+        low, high = _split_reference(ref)
+        payload = {'row': row, 'headers': [], 'reference_raw': ref,
+                   'headerless_recovery': True}
+        if splits:
+            payload['cell_fragments'] = splits
+        if noise:
+            payload['layout_noise'] = [cell for _, cell in noise]
+        if warning:
+            payload['ai_review_warning'] = warning
+        out.append(dict(source_kind='table', category='检验/检查表格',
+                        item_original=item, item_standard=item,
+                        value=value.replace('↑', '').replace('↓', '').strip(),
+                        value_num=_value_num(value), unit=units[0][1] if len(units) == 1 else '',
+                        reference_low=low, reference_high=high,
+                        abnormal_flag='低' if any('↓' in c for _, c in tail) else
+                                      '高' if any('↑' in c for _, c in tail) else '',
+                        evidence=' | '.join(row), page=block.page, bbox_json='',
+                        confidence=None, payload_json=payload))
+    return out
+
+
 def extract_table_rows(block: TableBlock):
     rows = [r for r in block.rows if any(c.strip() for c in r)]
-    if len(rows) < 2:
+    if not rows:
         return []
     header_index = 0
     best_score = -1
@@ -110,7 +235,7 @@ def extract_table_rows(block: TableBlock):
     ref_col = _find_col(headers, HEADER_ALIASES["reference"])
     flag_col = _find_col(headers, HEADER_ALIASES["flag"])
     if item_col is None or value_col is None:
-        return []
+        return _headerless_rows(block, rows)
     out = []
     for row in rows[header_index + 1:]:
         if max(item_col, value_col) >= len(row):
